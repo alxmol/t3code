@@ -8,7 +8,16 @@ import {
   normalizeDevinToolCall,
   extractDevinSubagentUpdate,
 } from "./devinAcp.ts";
-import { extractDroidElicitationForm } from "./droidAcp.ts";
+import {
+  droidPermissionDisposition,
+  droidPromptFailure,
+  droidSpecMarkdown,
+  extractDroidElicitationForm,
+  extractDroidSubagentUpdate,
+  isDroidAgent,
+  isDroidPlanModeId,
+  normalizeDroidToolCall,
+} from "./droidAcp.ts";
 import {
   copilotClientCapabilitiesMeta,
   extractCopilotSubagentUpdate,
@@ -187,6 +196,7 @@ export const makeAcpRegistryAdapterV2 = Effect.fn("makeAcpRegistryAdapterV2")(fu
   const startupKey =
     options.settings.source === "local" ? `local:${options.instanceId}` : registryAgentId;
   const isDevin = registryAgentId === "devin";
+  const isDroid = isDroidAgent(options.settings);
   // Local installs launch the `copilot` binary directly with no registry id.
   const isCopilot =
     registryAgentId === "github-copilot-cli" ||
@@ -220,8 +230,17 @@ export const makeAcpRegistryAdapterV2 = Effect.fn("makeAcpRegistryAdapterV2")(fu
       : AcpProviderCapabilitiesV2,
     customModels: readCustomModelEntries(options.settings.customModels).map((entry) => entry.slug),
     promptFailure: (cause) => acpRegistryPromptFailure(registryAgentId, cause),
-    ...(registryAgentId === "factory-droid"
-      ? { extractElicitationForm: extractDroidElicitationForm }
+    ...(isDroid
+      ? {
+          runtimeHarness: "Droid",
+          promptFailure: droidPromptFailure,
+          extractElicitationForm: extractDroidElicitationForm,
+          isPlanModeId: isDroidPlanModeId,
+          proposedPlanFromPermissionRequest: droidSpecMarkdown,
+          permissionDisposition: droidPermissionDisposition,
+          extractSubagentUpdate: extractDroidSubagentUpdate,
+          normalizeToolCall: normalizeDroidToolCall,
+        }
       : {}),
     // glm-acp-agent is the one agent whose per-turn usage a live probe has verified.
     ...(registryAgentId === "glm-acp-agent" ? { reportsPerTurnPromptUsage: true } : {}),

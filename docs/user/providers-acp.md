@@ -125,6 +125,20 @@ Registry agents can schedule work and use T3's MCP tools. Child-task presentatio
 the agent exposes: ACP has no portable native subagent-lineage contract, so richer delegation views
 remain agent-specific.
 
+## Factory Droid
+
+Pick **Spec** under **Autonomy Level** in the model options menu to have Droid write a spec before
+it changes anything. The spec appears in the conversation as a plan, and Droid waits for you to
+approve it in every permission mode, including **Full access**. Approve it and Droid implements it
+in the same turn; decline, or send a message, to keep refining it.
+
+Each sub-agent Droid starts with its Task tool gets its own card with the task and its result.
+Droid does not share what a sub-agent does in between, so the card opens to those two messages.
+
+Models that Droid runs through a local Claude subscription bridge report that subscription's
+limits. They appear on the Usage page as **Claude Session** and **Claude Weekly** and apply only to
+those models; Droid's other models are not held back when they run out.
+
 ## Checkpoints
 
 Checkpoint rollback restores your files as usual. ACP agents cannot rewind their own conversation,

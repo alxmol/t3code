@@ -410,6 +410,12 @@ export interface AcpAdapterV2Flavor {
    * Under a policy ceiling, a mode the user picks that this does not place under it is not applied.
    */
   readonly runtimeModeForSessionMode?: (modeId: string) => RuntimeMode | undefined;
+  /** The agent's plan mode, for one that names it neither `plan` nor `architect` (Droid's `spec`). */
+  readonly isPlanModeId?: (modeId: string) => boolean;
+  /** A plan the agent submits for approval through a permission request, shown as a proposed plan. */
+  readonly proposedPlanFromPermissionRequest?: (
+    request: EffectAcpSchema.RequestPermissionRequest,
+  ) => string | undefined;
   readonly clientFileSystem?: {
     readonly readTextFile: (
       request: EffectAcpSchema.ReadTextFileRequest,
@@ -6539,6 +6545,10 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                   // tool already seen under the same id so policy can tell a
                   // read from a write.
                   const knownKind = context?.tools.get(params.toolCall.toolCallId)?.kind;
+                  const planMarkdown = flavor.proposedPlanFromPermissionRequest?.(params);
+                  if (planMarkdown !== undefined) {
+                    yield* captureProposedPlan({ planMarkdown });
+                  }
                   const disposition = dispositionFor(
                     context?.input.runtimePolicy ?? latestRuntimePolicy,
                     params.toolCall.kind == null && knownKind !== undefined
@@ -7423,8 +7433,9 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                 })),
               });
             }
+            const isPlanModeId = flavor.isPlanModeId ?? isAcpPlanModeId;
             const planMode = effectiveModeState?.availableModes.find((mode) =>
-              isAcpPlanModeId(mode.id),
+              isPlanModeId(mode.id),
             );
             if (planMode !== undefined && effectiveModeState?.currentModeId !== planMode.id) {
               yield* runtime.setMode(planMode.id);
@@ -7433,7 +7444,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
               const choices = option.options.flatMap((entry) =>
                 "value" in entry ? [entry.value] : entry.options.map((choice) => choice.value),
               );
-              const requested = choices.find(isAcpPlanModeId);
+              const requested = choices.find(isPlanModeId);
               if (requested !== undefined && option.currentValue !== requested) {
                 yield* runtime.setConfigOption(option.id, requested);
               }

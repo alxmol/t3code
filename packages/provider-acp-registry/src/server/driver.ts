@@ -15,7 +15,10 @@ import * as Digest from "effect/crypto/Digest";
 import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
+import * as HttpClient from "effect/http/HttpClient";
 import * as Option from "effect/Option";
+import * as Path from "effect/Path";
 import * as Ref from "effect/Ref";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
@@ -58,6 +61,8 @@ import {
 } from "./probe.ts";
 import * as AcpRegistrySupport from "./AcpRegistrySupport.ts";
 import * as AcpRegistryRuntimeCoordinator from "./AcpRegistryRuntimeCoordinator.ts";
+import { isDroidAgent } from "./droidAcp.ts";
+import { readDroidSubscriptionUsageLimits } from "./droidUsageLimits.ts";
 import * as AcpRegistryAuth from "./auth.ts";
 import * as AcpRegistryAuthenticationState from "./authenticationState.ts";
 
@@ -586,10 +591,31 @@ export const AcpRegistryDriver: ProviderDriver<AcpRegistrySettings, AcpRegistryD
             }),
           );
     });
-    const checkProvider = checkAcpRegistryProviderReadiness(readinessInput).pipe(
+    const checkReadiness = checkAcpRegistryProviderReadiness(readinessInput).pipe(
       Effect.provideService(AcpRegistrySupport.AcpRegistryCatalog, catalog),
       Effect.flatMap(withLiveRuntimeState),
     );
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const httpClient = yield* Effect.serviceOption(HttpClient.HttpClient);
+    // Kept out of the initial snapshot, which must not wait on Droid's local bridge.
+    const checkProvider =
+      isDroidAgent(effectiveConfig) && Option.isSome(httpClient)
+        ? checkReadiness.pipe(
+            Effect.filterOrElse(
+              (provider) => !(provider.enabled && provider.installed),
+              (provider) =>
+                readDroidSubscriptionUsageLimits(processEnvironment).pipe(
+                  Effect.provideService(FileSystem.FileSystem, fileSystem),
+                  Effect.provideService(Path.Path, path),
+                  Effect.provideService(HttpClient.HttpClient, httpClient.value),
+                  Effect.map((usageLimits) =>
+                    usageLimits === undefined ? provider : { ...provider, usageLimits },
+                  ),
+                ),
+            ),
+          )
+        : checkReadiness;
     const enrichProvider = checkAcpRegistryProviderStatus(
       {
         ...readinessInput,
@@ -653,7 +679,7 @@ export const AcpRegistryDriver: ProviderDriver<AcpRegistrySettings, AcpRegistryD
       getSettings: snapshotSettings.getSettings,
       streamSettings: snapshotSettings.streamSettings,
       haveSettingsChanged: haveProviderSnapshotSettingsChanged,
-      initialSnapshot: () => checkProvider,
+      initialSnapshot: () => checkReadiness,
       checkProvider,
       enrichSnapshot: Effect.fn("enrichSnapshot")(function ({
         snapshot,

@@ -53,6 +53,11 @@ export function exhaustedUsageWindow(
         );
       });
     }
+    case "acpRegistry":
+      // Droid's Claude subscription windows limit only the models its local bridge serves.
+      return exhausted.find(
+        (window) => !window.id.startsWith("claude_") || model.startsWith("custom:Claude-Code-"),
+      );
     case "opencode":
       return exhausted.find(
         (window) => !window.id.startsWith("go_") || model.startsWith("opencode-go/"),

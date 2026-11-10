@@ -132,6 +132,13 @@ describe("new thread model fallback", () => {
     ["antigravity", ["gemini-weekly"], "antigravity-default", true],
     ["opencode", ["go_weekly"], "opencode/big-pickle", false],
     ["opencode", ["go_weekly"], "opencode-go/big-pickle", true],
+    ["acpRegistry", ["claude_seven_day"], "claude-opus-5-5", false],
+    [
+      "acpRegistry",
+      ["claude_seven_day"],
+      "custom:Claude-Code-·-Opus-5.5-(claude-opus-5-5)-0",
+      true,
+    ],
   ] as const)("matches %s pools %s to %s", (driver, ids, model, usesFallback) => {
     const defaultSelection = { ...selection, model };
     expect(
