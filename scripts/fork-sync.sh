@@ -41,6 +41,18 @@ git fetch --quiet origin
 git merge-base --is-ancestor origin/main upstream/main ||
   die "origin/main has commits upstream lacks; move them to '$FORK_BRANCH' so main stays a mirror"
 
+# GitHub's "Sync fork" button also moves the fork branch; take that in before upstream.
+if git rev-parse --verify --quiet "origin/$FORK_BRANCH" >/dev/null &&
+  ! git merge-base --is-ancestor "origin/$FORK_BRANCH" HEAD; then
+  printf 'fork-sync: taking in origin/%s\n' "$FORK_BRANCH"
+  if ! git merge --no-edit "origin/$FORK_BRANCH"; then
+    conflicts="$(git diff --name-only --diff-filter=U)"
+    git merge --abort
+    die "origin/$FORK_BRANCH conflicts with local commits in:
+$conflicts"
+  fi
+fi
+
 behind="$(git rev-list --count HEAD..upstream/main)"
 if [ "$behind" -gt 0 ]; then
   printf 'fork-sync: merging %s upstream commits into %s\n' "$behind" "$FORK_BRANCH"
