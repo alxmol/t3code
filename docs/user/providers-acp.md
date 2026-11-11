@@ -130,7 +130,9 @@ remain agent-specific.
 Pick **Spec** under **Autonomy Level** in the model options menu to have Droid write a spec before
 it changes anything. The spec appears in the conversation as a plan, and Droid waits for you to
 approve it in every permission mode, including **Full access**. Approve it and Droid implements it
-in the same turn; decline, or send a message, to keep refining it.
+in the same turn; decline, or send a message, to keep refining it. Spec stays selected, so Droid
+writes a spec for your next message too. Pick another Autonomy Level when you want it to work
+directly.
 
 Each sub-agent Droid starts with its Task tool gets its own card with the task and its result.
 Droid does not share what a sub-agent does in between, so the card opens to those two messages.

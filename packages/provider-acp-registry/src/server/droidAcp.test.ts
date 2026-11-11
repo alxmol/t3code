@@ -4,12 +4,14 @@ import {
   parseSessionUpdateEvent,
   type AcpToolCallState,
 } from "@t3tools/provider-acp/server/runtimeModel";
+import { ProviderInstanceId } from "@t3tools/contracts";
 import { ProviderAdapterV2RuntimePolicy } from "@t3tools/provider-core/server/ProviderAdapter";
 import { describe, expect, it } from "@effect/vitest";
 import type * as AcpSchema from "effect-acp/compat";
 import * as AcpErrors from "effect-acp/errors";
 
 import {
+  droidLeftSpec,
   droidPermissionDisposition,
   droidPromptFailure,
   droidSpecMarkdown,
@@ -85,6 +87,30 @@ describe("Droid spec approval", () => {
   it("leaves every other request to the runtime policy", () => {
     expect(droidSpecMarkdown(editRequest)).toBeUndefined();
     expect(droidPermissionDisposition(policy("default"), editRequest)).toBe("allow");
+  });
+
+  it("returns to Spec after an approved spec, and leaves every other level where Droid put it", () => {
+    const live = (currentValue: string): ReadonlyArray<AcpSchema.SessionConfigOption> => [
+      {
+        id: "autonomy_level",
+        name: "Autonomy Level",
+        category: "mode",
+        type: "select",
+        currentValue,
+        options: ["normal", "spec", "auto-low"].map((value) => ({ value, name: value })),
+      },
+    ];
+    const selects = (value: string) => ({
+      instanceId: ProviderInstanceId.make("droid"),
+      model: "default",
+      options: [{ id: "autonomy_level", value }],
+    });
+    expect(droidLeftSpec(live("normal"), selects("spec"))).toBe(true);
+    expect(droidLeftSpec(live("spec"), selects("spec"))).toBe(false);
+    expect(droidLeftSpec(live("auto-low"), selects("normal"))).toBe(false);
+    expect(
+      droidLeftSpec(live("normal"), { instanceId: selects("spec").instanceId, model: "default" }),
+    ).toBe(false);
   });
 });
 

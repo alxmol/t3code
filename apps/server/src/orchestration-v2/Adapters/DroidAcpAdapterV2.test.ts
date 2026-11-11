@@ -73,6 +73,26 @@ const DROID_MODES = {
   ],
   currentModeId: "auto-high",
 };
+const autonomyLevel = (currentValue: string) => ({
+  configOptions: [
+    {
+      id: "autonomy_level",
+      name: "Autonomy Level",
+      category: "mode",
+      type: "select",
+      currentValue,
+      options: DROID_MODES.availableModes.map(({ id, name }) => ({ value: id, name })),
+    },
+  ],
+});
+const SET_SPEC = [
+  expectRequest("session/set_config_option", {
+    sessionId: "droid-session",
+    configId: "autonomy_level",
+    value: "spec",
+  }),
+  respond("session/set_config_option", autonomyLevel("spec")),
+];
 const SPEC_INPUT = { plan: "1. Create spec-ok.txt.\n2. Verify it.", title: "Create spec-ok.txt" };
 const SPEC_TOOL = {
   toolCallId: "toolu_spec",
@@ -113,6 +133,8 @@ const specDecision = (optionId: string) => ({
 const openDroidTurn = Effect.fn("DroidAcpAdapterV2Test.openDroidTurn")(function* (input: {
   readonly scenario: string;
   readonly interactionMode: "default" | "plan";
+  /** The Autonomy Level saved on the thread; Droid opens on Auto (High). */
+  readonly autonomyLevel?: string;
   readonly entries: ReadonlyArray<unknown>;
 }) {
   const fileSystem = yield* FileSystem.FileSystem;
@@ -128,7 +150,11 @@ const openDroidTurn = Effect.fn("DroidAcpAdapterV2Test.openDroidTurn")(function*
         expectRequest("initialize"),
         respond("initialize", { protocolVersion: 1, agentCapabilities: {}, authMethods: [] }),
         expectRequest("session/new"),
-        respond("session/new", { sessionId: "droid-session", modes: DROID_MODES }),
+        respond("session/new", {
+          sessionId: "droid-session",
+          modes: DROID_MODES,
+          ...(input.autonomyLevel === undefined ? {} : autonomyLevel("auto-high")),
+        }),
         ...input.entries,
         { type: "runtime_exit", status: "success" },
       ],
@@ -156,7 +182,13 @@ const openDroidTurn = Effect.fn("DroidAcpAdapterV2Test.openDroidTurn")(function*
     ),
   );
   const threadId = ThreadId.make(`droid-${input.scenario}-thread`);
-  const modelSelection = { instanceId, model: "default" } as const;
+  const modelSelection = {
+    instanceId,
+    model: "default",
+    ...(input.autonomyLevel === undefined
+      ? {}
+      : { options: [{ id: "autonomy_level", value: input.autonomyLevel }] }),
+  };
   const runtimePolicy = ProviderAdapter.ProviderAdapterV2RuntimePolicy.make({
     runtimeMode: "full-access",
     interactionMode: input.interactionMode,
@@ -169,35 +201,47 @@ const openDroidTurn = Effect.fn("DroidAcpAdapterV2Test.openDroidTurn")(function*
     providerSessionId: ProviderSessionId.make(`droid-${input.scenario}-session`),
   });
   const providerThread = yield* runtime.ensureThread({ threadId, modelSelection, runtimePolicy });
-  yield* runtime.startTurn(
-    makeTurnInput({
-      threadId,
-      providerThread,
-      instanceId,
-      runtimePolicy,
-      now: yield* DateTime.now,
-    }),
-  );
-  return runtime;
+  const startTurn = Effect.fnUntraced(function* (ordinal: number) {
+    yield* runtime.startTurn(
+      makeTurnInput({
+        threadId,
+        providerThread,
+        instanceId,
+        runtimePolicy,
+        modelSelection,
+        ordinal,
+        now: yield* DateTime.now,
+      }),
+    );
+  });
+  yield* startTurn(1);
+  return { runtime, startTurn };
 });
 
 describe("Droid over ACP", () => {
   it.live("asks before leaving Spec mode, even with full access, and shows the spec", () =>
     Effect.gen(function* () {
-      const runtime = yield* openDroidTurn({
+      const { runtime, startTurn } = yield* openDroidTurn({
         scenario: "spec-approval",
         interactionMode: "default",
+        autonomyLevel: "spec",
         entries: [
+          ...SET_SPEC,
           expectRequest("session/prompt"),
           update({ sessionUpdate: "tool_call", status: "pending", ...SPEC_TOOL }),
           SPEC_PERMISSION,
           specDecision("proceed_once"),
+          // An approved spec moves Droid out of Spec, to the level its option names.
+          update({ sessionUpdate: "config_option_update", ...autonomyLevel("normal") }),
           update({
             sessionUpdate: "tool_call_update",
             toolCallId: "toolu_spec",
             name: "ExitSpecMode",
             status: "completed",
           }),
+          respond("session/prompt", { stopReason: "end_turn" }),
+          ...SET_SPEC,
+          expectRequest("session/prompt"),
           respond("session/prompt", { stopReason: "end_turn" }),
         ],
       });
@@ -224,12 +268,20 @@ describe("Droid over ACP", () => {
         Stream.runHead,
       );
       assert.equal(Option.getOrThrow(terminal).status, "completed");
+
+      // The thread still selects Spec, so the next turn starts in it again.
+      yield* startTurn(2);
+      const next = yield* runtime.events.pipe(
+        Stream.filter((event) => event.type === "turn.terminal"),
+        Stream.runHead,
+      );
+      assert.equal(Option.getOrThrow(next).status, "completed");
     }).pipe(Effect.provide(layerTest), Effect.scoped),
   );
 
   it.live("uses Spec mode for a plan turn and keeps the spec for a later turn", () =>
     Effect.gen(function* () {
-      const runtime = yield* openDroidTurn({
+      const { runtime } = yield* openDroidTurn({
         scenario: "spec-plan-mode",
         interactionMode: "plan",
         entries: [
@@ -263,7 +315,7 @@ describe("Droid over ACP", () => {
 
   it.live("fails a rate-limited turn as a usage limit", () =>
     Effect.gen(function* () {
-      const runtime = yield* openDroidTurn({
+      const { runtime } = yield* openDroidTurn({
         scenario: "rate-limited",
         interactionMode: "default",
         entries: [

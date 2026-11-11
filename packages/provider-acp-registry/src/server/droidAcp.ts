@@ -132,6 +132,19 @@ export const droidPermissionDisposition: NonNullable<
       ? "deny"
       : "ask";
 
+// An approved spec moves Droid to another autonomy level while the thread still selects Spec.
+// Only Spec returns: a level Droid raised for an "always allow" answer is the user's own choice.
+export const droidLeftSpec: NonNullable<AcpAdapterV2Flavor["leftSelectedOption"]> = (
+  configOptions,
+  selection,
+) =>
+  selection.options?.some((option) => option.id === "autonomy_level" && option.value === "spec") ===
+    true &&
+  configOptions.some(
+    (option) =>
+      option.id === "autonomy_level" && option.type === "select" && option.currentValue !== "spec",
+  );
+
 const decodeTaskInput = Schema.decodeUnknownOption(
   Schema.Struct({ prompt: Schema.String, description: Schema.optionalKey(Schema.String) }),
 );

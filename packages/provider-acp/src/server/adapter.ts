@@ -416,6 +416,11 @@ export interface AcpAdapterV2Flavor {
   readonly proposedPlanFromPermissionRequest?: (
     request: EffectAcpSchema.RequestPermissionRequest,
   ) => string | undefined;
+  /** True when the agent left an option the thread selects; the next turn applies the selection again. */
+  readonly leftSelectedOption?: (
+    configOptions: ReadonlyArray<EffectAcpSchema.SessionConfigOption>,
+    selection: ModelSelection,
+  ) => boolean;
   readonly clientFileSystem?: {
     readonly readTextFile: (
       request: EffectAcpSchema.ReadTextFileRequest,
@@ -8103,7 +8108,11 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
               if (
                 configuredSelection === null ||
                 !modelSelectionsEqual(configuredSelection, turnInput.modelSelection) ||
-                configuredInteractionMode !== turnInput.runtimePolicy.interactionMode
+                configuredInteractionMode !== turnInput.runtimePolicy.interactionMode ||
+                flavor.leftSelectedOption?.(
+                  yield* runtime.getConfigOptions,
+                  turnInput.modelSelection,
+                ) === true
               ) {
                 const currentSessionSetup = yield* Ref.get(activeSessionSetup);
                 if (currentSessionSetup === null) {

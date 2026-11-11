@@ -9,6 +9,7 @@ import {
   extractDevinSubagentUpdate,
 } from "./devinAcp.ts";
 import {
+  droidLeftSpec,
   droidPermissionDisposition,
   droidPromptFailure,
   droidSpecMarkdown,
@@ -238,6 +239,7 @@ export const makeAcpRegistryAdapterV2 = Effect.fn("makeAcpRegistryAdapterV2")(fu
           isPlanModeId: isDroidPlanModeId,
           proposedPlanFromPermissionRequest: droidSpecMarkdown,
           permissionDisposition: droidPermissionDisposition,
+          leftSelectedOption: droidLeftSpec,
           extractSubagentUpdate: extractDroidSubagentUpdate,
           normalizeToolCall: normalizeDroidToolCall,
         }
