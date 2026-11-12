@@ -11,10 +11,15 @@
 #
 #   scripts/fork-sync.sh             merge, check, push
 #   scripts/fork-sync.sh --no-push   merge and check only
+#
+# FORK_SYNC_TARGET=<commit> merges that upstream commit instead of upstream main. The daily job
+# passes the newest T3 Code Nightly release's commit, so the fork's app is that Nightly plus the
+# fork's own changes.
 set -euo pipefail
 
 UPSTREAM_URL="https://github.com/pingdotgg/t3code.git"
 FORK_BRANCH="${FORK_BRANCH:-factory}"
+TARGET="${FORK_SYNC_TARGET:-upstream/main}"
 
 die() {
   printf 'fork-sync: %s\n' "$*" >&2
@@ -37,6 +42,9 @@ cd "$(git rev-parse --show-toplevel)"
 git remote get-url upstream >/dev/null 2>&1 || git remote add upstream "$UPSTREAM_URL"
 git fetch --quiet upstream main
 git fetch --quiet origin
+git rev-parse --verify --quiet "$TARGET^{commit}" >/dev/null || die "unknown upstream commit '$TARGET'"
+git merge-base --is-ancestor "$TARGET" upstream/main || die "'$TARGET' is not on upstream main"
+upstream="$(git rev-parse --short "$TARGET")"
 
 git merge-base --is-ancestor origin/main upstream/main ||
   die "origin/main has commits upstream lacks; move them to '$FORK_BRANCH' so main stays a mirror"
@@ -53,17 +61,17 @@ $conflicts"
   fi
 fi
 
-behind="$(git rev-list --count HEAD..upstream/main)"
+behind="$(git rev-list --count "HEAD..$TARGET")"
 if [ "$behind" -gt 0 ]; then
-  printf 'fork-sync: merging %s upstream commits into %s\n' "$behind" "$FORK_BRANCH"
-  if ! git merge --no-edit upstream/main; then
+  printf 'fork-sync: merging %s upstream commits (to %s) into %s\n' "$behind" "$upstream" "$FORK_BRANCH"
+  if ! git merge --no-edit "$TARGET"; then
     conflicts="$(git diff --name-only --diff-filter=U)"
     git merge --abort
     die "upstream conflicts with fork changes in:
 $conflicts"
   fi
 else
-  printf 'fork-sync: %s already contains upstream main\n' "$FORK_BRANCH"
+  printf 'fork-sync: %s already contains upstream %s\n' "$FORK_BRANCH" "$upstream"
 fi
 
 # The repository pins an exact Node release; pick it up from nvm when the shell has another.
@@ -77,13 +85,13 @@ PATH="$PWD/node_modules/.bin:$PATH"
 command -v vp >/dev/null 2>&1 || die "vp is not installed; run the repository's install once"
 
 vp i --frozen-lockfile
-vp run check:changed upstream/main ||
-  die "the fork's changes fail checks against upstream $(git rev-parse --short upstream/main); nothing was pushed"
+vp run check:changed "$TARGET" ||
+  die "the fork's changes fail checks against upstream $upstream; nothing was pushed"
 
 if [ "$push" -eq 1 ]; then
   git push origin upstream/main:refs/heads/main
   git push origin "$FORK_BRANCH"
-  printf 'fork-sync: pushed main and %s at upstream %s\n' "$FORK_BRANCH" "$(git rev-parse --short upstream/main)"
+  printf 'fork-sync: pushed main and %s at upstream %s\n' "$FORK_BRANCH" "$upstream"
 else
-  printf 'fork-sync: checks passed at upstream %s; nothing pushed (--no-push)\n' "$(git rev-parse --short upstream/main)"
+  printf 'fork-sync: checks passed at upstream %s; nothing pushed (--no-push)\n' "$upstream"
 fi
