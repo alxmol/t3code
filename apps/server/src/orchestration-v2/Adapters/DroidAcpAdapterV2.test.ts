@@ -13,9 +13,11 @@ import { makeAcpRegistryAdapterV2 } from "@t3tools/provider-acp-registry/testing
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
 import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";
+import { makeProviderReplayGate } from "@t3tools/provider-testing/replayGate";
 import * as TestProviderHost from "@t3tools/provider-testing/TestProviderHost";
 import { resolveSelfInvocation } from "@t3tools/shared/nodeRuntime";
 import * as DateTime from "effect/DateTime";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -136,6 +138,8 @@ const openDroidTurn = Effect.fn("DroidAcpAdapterV2Test.openDroidTurn")(function*
   /** The Autonomy Level saved on the thread; Droid opens on Auto (High). */
   readonly autonomyLevel?: string;
   readonly entries: ReadonlyArray<unknown>;
+  readonly replayGate?: ReturnType<typeof makeProviderReplayGate>;
+  readonly onContinuationOffered?: Effect.Effect<void>;
 }) {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -167,6 +171,9 @@ const openDroidTurn = Effect.fn("DroidAcpAdapterV2Test.openDroidTurn")(function*
     selfInvocation: yield* resolveSelfInvocation(),
     settings: DROID_SETTINGS,
     environment: {},
+    ...(input.onContinuationOffered === undefined
+      ? {}
+      : { continuationRequests: { offer: () => input.onContinuationOffered! } }),
     makeRuntime: makeAcpReplayRuntime({
       transcript,
       statusPath: path.join(directory, "status.json"),
@@ -175,6 +182,7 @@ const openDroidTurn = Effect.fn("DroidAcpAdapterV2Test.openDroidTurn")(function*
         new URL("../../../scripts/acp-replay-agent.ts", import.meta.url),
       ),
       childProcessSpawner: yield* ChildProcessSpawner.ChildProcessSpawner,
+      ...(input.replayGate === undefined ? {} : { replayGate: input.replayGate }),
     }),
   }).pipe(
     Effect.provide(
@@ -201,7 +209,13 @@ const openDroidTurn = Effect.fn("DroidAcpAdapterV2Test.openDroidTurn")(function*
     providerSessionId: ProviderSessionId.make(`droid-${input.scenario}-session`),
   });
   const providerThread = yield* runtime.ensureThread({ threadId, modelSelection, runtimePolicy });
-  const startTurn = Effect.fnUntraced(function* (ordinal: number) {
+  const startTurn = Effect.fnUntraced(function* (
+    ordinal: number,
+    message?: Pick<
+      Parameters<typeof makeTurnInput>[0],
+      "messageCreatedBy" | "messageCreationSource" | "messageText"
+    >,
+  ) {
     yield* runtime.startTurn(
       makeTurnInput({
         threadId,
@@ -211,6 +225,7 @@ const openDroidTurn = Effect.fn("DroidAcpAdapterV2Test.openDroidTurn")(function*
         modelSelection,
         ordinal,
         now: yield* DateTime.now,
+        ...message,
       }),
     );
   });
@@ -310,6 +325,154 @@ describe("Droid over ACP", () => {
       );
       const terminal = events.at(-1);
       assert.equal(terminal?.type === "turn.terminal" ? terminal.status : undefined, "completed");
+    }).pipe(Effect.provide(layerTest), Effect.scoped),
+  );
+
+  // Factory Droid 1.9.0 runs a Task in the background and may answer the prompt before it ends.
+  it.live("keeps the turn open for a Task that outlives the prompt", () =>
+    Effect.gen(function* () {
+      const task = { toolCallId: "call_task_1", name: "Task" };
+      const gate = makeProviderReplayGate(["task-result"]);
+      const { runtime } = yield* openDroidTurn({
+        scenario: "background-task",
+        interactionMode: "default",
+        replayGate: gate,
+        entries: [
+          expectRequest("session/prompt"),
+          update({
+            sessionUpdate: "tool_call",
+            ...task,
+            title: "Explorer: Reply with PONG",
+            kind: "other",
+            status: "pending",
+            rawInput: {
+              subagent_type: "explorer",
+              description: "Reply with PONG",
+              prompt: "Reply with the single word PONG.",
+            },
+          }),
+          update({
+            sessionUpdate: "tool_call_update",
+            ...task,
+            status: "in_progress",
+            rawOutput: { text: "Running in background" },
+          }),
+          update({
+            sessionUpdate: "agent_message_chunk",
+            content: { type: "text", text: "It runs in the background." },
+          }),
+          respond("session/prompt", { stopReason: "end_turn" }),
+          {
+            ...update({
+              sessionUpdate: "tool_call_update",
+              ...task,
+              status: "completed",
+              rawOutput: { text: "PONG" },
+            }),
+            label: "task-result",
+          },
+          update({
+            sessionUpdate: "agent_message_chunk",
+            content: { type: "text", text: "The sub-agent replied: PONG" },
+          }),
+        ],
+      });
+      // The prompt has been answered once its text is closed; only then does the result arrive.
+      yield* runtime.events.pipe(
+        Stream.takeUntil(
+          (event) =>
+            event.type === "turn_item.updated" &&
+            event.turnItem.type === "assistant_message" &&
+            event.turnItem.status === "completed",
+        ),
+        Stream.runDrain,
+      );
+      gate.release("task-result");
+      const events = yield* runtime.events.pipe(
+        Stream.takeUntil((event) => event.type === "turn.terminal"),
+        Stream.runCollect,
+      );
+      const items = events.flatMap((event) =>
+        event.type === "turn_item.updated" ? [event.turnItem] : [],
+      );
+      const subagent = items.findLast((item) => item.type === "subagent");
+      assert.deepEqual(
+        subagent?.type === "subagent" ? [subagent.status, subagent.result] : undefined,
+        ["completed", "PONG"],
+      );
+      assert.isTrue(
+        items.some(
+          (item) =>
+            item.type === "assistant_message" && item.text.includes("The sub-agent replied: PONG"),
+        ),
+      );
+      const terminal = events.at(-1);
+      assert.equal(terminal?.type === "turn.terminal" ? terminal.status : undefined, "completed");
+    }).pipe(Effect.provide(layerTest), Effect.scoped),
+  );
+
+  it.live("shows what Droid says about a Task after its turn has closed", () =>
+    Effect.gen(function* () {
+      const gate = makeProviderReplayGate(["follow-up"]);
+      const offered = yield* Deferred.make<void>();
+      const { runtime, startTurn } = yield* openDroidTurn({
+        scenario: "background-task-follow-up",
+        interactionMode: "default",
+        replayGate: gate,
+        onContinuationOffered: Deferred.succeed(offered, undefined).pipe(Effect.asVoid),
+        entries: [
+          expectRequest("session/prompt"),
+          update({
+            sessionUpdate: "tool_call",
+            toolCallId: "call_task_1",
+            name: "Task",
+            kind: "other",
+            status: "in_progress",
+            rawInput: { description: "Reply with PONG", prompt: "Reply with PONG." },
+          }),
+          respond("session/prompt", { stopReason: "end_turn" }),
+          update({
+            sessionUpdate: "tool_call_update",
+            toolCallId: "call_task_1",
+            name: "Task",
+            status: "completed",
+            rawOutput: { text: "PONG" },
+          }),
+          {
+            ...update({
+              sessionUpdate: "agent_message_chunk",
+              content: { type: "text", text: "The sub-agent replied: PONG" },
+            }),
+            label: "follow-up",
+          },
+        ],
+      });
+      const terminal = yield* runtime.events.pipe(
+        Stream.filter((event) => event.type === "turn.terminal"),
+        Stream.runHead,
+      );
+      assert.equal(Option.getOrThrow(terminal).status, "completed");
+      gate.release("follow-up");
+      yield* Deferred.await(offered);
+      yield* startTurn(2, {
+        messageCreatedBy: "agent",
+        messageCreationSource: "provider",
+        messageText: "Background task completed.",
+      });
+      const continued = yield* runtime.events.pipe(
+        Stream.takeUntil((event) => event.type === "turn.terminal"),
+        Stream.runCollect,
+      );
+      assert.isTrue(
+        continued.some(
+          (event) =>
+            event.type === "turn_item.updated" &&
+            event.turnItem.type === "assistant_message" &&
+            event.turnItem.text.includes("The sub-agent replied: PONG"),
+        ),
+      );
+      const end = continued.at(-1);
+      assert.equal(end?.type === "turn.terminal" ? end.status : undefined, "completed");
     }).pipe(Effect.provide(layerTest), Effect.scoped),
   );
 

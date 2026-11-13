@@ -145,6 +145,9 @@ export const droidLeftSpec: NonNullable<AcpAdapterV2Flavor["leftSelectedOption"]
       option.id === "autonomy_level" && option.type === "select" && option.currentValue !== "spec",
   );
 
+// A Task is a card with a prompt and a result; a delegated child is a thread the user can open.
+export const DROID_ORCHESTRATION_INSTRUCTIONS = `Factory Droid subagents: start every subagent with \`delegate_task\`, including one on your own provider and model, so each gets its own T3 thread. This replaces the native-tool rule above. Use your \`Task\` tool only when the user names it or asks for one of your droids by name.`;
+
 const decodeTaskInput = Schema.decodeUnknownOption(
   Schema.Struct({ prompt: Schema.String, description: Schema.optionalKey(Schema.String) }),
 );

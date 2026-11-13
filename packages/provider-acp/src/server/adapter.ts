@@ -449,6 +449,8 @@ export interface AcpAdapterV2Flavor {
   readonly runtimeModeForSessionMode?: (modeId: string) => RuntimeMode | undefined;
   /** The agent's plan mode, for one that names it neither `plan` nor `architect` (Droid's `spec`). */
   readonly isPlanModeId?: (modeId: string) => boolean;
+  /** The agent's own rules for the T3 tools, sent after the shared orchestration instructions. */
+  readonly orchestrationInstructions?: string;
   /** A plan the agent submits for approval through a permission request, shown as a proposed plan. */
   readonly proposedPlanFromPermissionRequest?: (
     request: EffectAcpSchema.RequestPermissionRequest,
@@ -8045,6 +8047,9 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           const text = t3AcpPromptWithInstructions({
             prompt: messageText,
             state: instructionState,
+            ...(flavor.orchestrationInstructions === undefined
+              ? {}
+              : { agentInstructions: flavor.orchestrationInstructions }),
             ...(previousInstructionState === undefined || compactionMarker !== undefined
               ? {}
               : { previousState: previousInstructionState }),

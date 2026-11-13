@@ -78,6 +78,8 @@ export function t3AcpPromptWithInstructions(input: {
   readonly prompt: string;
   readonly state: T3AcpInstructionState;
   readonly previousState?: T3AcpInstructionState;
+  /** One agent's own rules for the T3 tools, placed last so they win over the shared ones. */
+  readonly agentInstructions?: string;
 }): string {
   // Native slash commands must remain at the start of the prompt.
   if (input.prompt.trimStart().startsWith("/")) return input.prompt;
@@ -98,6 +100,7 @@ export function t3AcpPromptWithInstructions(input: {
           ...(input.state.hasDeviceTools ? [T3_CODE_DEVICE_TOOL_INSTRUCTIONS] : []),
           T3_CODE_ORCHESTRATION_INSTRUCTIONS.trim(),
           T3_CODE_ACP_MCP_FALLBACK_INSTRUCTIONS,
+          ...(input.agentInstructions === undefined ? [] : [input.agentInstructions]),
         ]
       : []),
   ];

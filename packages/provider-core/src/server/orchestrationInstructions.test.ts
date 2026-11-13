@@ -81,5 +81,19 @@ describe("T3 device instructions", () => {
       "Again.",
     );
     assert.notInclude(t3AcpPromptWithInstructions({ prompt: "Hi.", state }), "## T3 Code devices");
+    // An agent's own rules come last, and only with the T3 tools they are about.
+    const agentInstructions = "Agent rule.";
+    assert.include(
+      t3AcpPromptWithInstructions({ prompt: "Hi.", state, agentInstructions }),
+      "Agent rule.\n</t3_code_instructions>",
+    );
+    assert.notInclude(
+      t3AcpPromptWithInstructions({
+        prompt: "Hi.",
+        state: { ...state, hasT3Mcp: false },
+        agentInstructions,
+      }),
+      agentInstructions,
+    );
   });
 });

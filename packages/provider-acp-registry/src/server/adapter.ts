@@ -9,6 +9,7 @@ import {
   extractDevinSubagentUpdate,
 } from "./devinAcp.ts";
 import {
+  DROID_ORCHESTRATION_INSTRUCTIONS,
   droidLeftSpec,
   droidPermissionDisposition,
   droidPromptFailure,
@@ -237,11 +238,15 @@ export const makeAcpRegistryAdapterV2 = Effect.fn("makeAcpRegistryAdapterV2")(fu
           promptFailure: droidPromptFailure,
           extractElicitationForm: extractDroidElicitationForm,
           isPlanModeId: isDroidPlanModeId,
+          orchestrationInstructions: DROID_ORCHESTRATION_INSTRUCTIONS,
           proposedPlanFromPermissionRequest: droidSpecMarkdown,
           permissionDisposition: droidPermissionDisposition,
           leftSelectedOption: droidLeftSpec,
           extractSubagentUpdate: extractDroidSubagentUpdate,
           normalizeToolCall: normalizeDroidToolCall,
+          // Droid 1.9 can answer the prompt while a Task runs, then report it and carry on.
+          deferFinalizeForBackgroundWork: true,
+          enablePostSettleContinuation: true,
         }
       : {}),
     // glm-acp-agent is the one agent whose per-turn usage a live probe has verified.

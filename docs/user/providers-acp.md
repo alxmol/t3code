@@ -134,8 +134,10 @@ in the same turn; decline, or send a message, to keep refining it. Spec stays se
 writes a spec for your next message too. Pick another Autonomy Level when you want it to work
 directly.
 
-Each sub-agent Droid starts with its Task tool gets its own card with the task and its result.
-Droid does not share what a sub-agent does in between, so the card opens to those two messages.
+Ask Droid for a sub-agent and it starts one as a child thread, on Droid or on any other provider
+you name, so you can open the sub-agent's own conversation and follow its steps. Droid's own Task
+tool still works when you ask for it by name: each Task gets a card with the task and its result.
+Droid does not share what a Task does in between, so that card opens to those two messages.
 
 Models that Droid runs through a local Claude subscription bridge report that subscription's
 limits. They appear on the Usage page as **Claude Session** and **Claude Weekly** and apply only to
