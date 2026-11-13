@@ -361,6 +361,8 @@ describe("Droid over ACP", () => {
             sessionUpdate: "agent_message_chunk",
             content: { type: "text", text: "It runs in the background." },
           }),
+          // Factory Droid 1.10.0 closes the running call as the prompt ends, before its result.
+          update({ sessionUpdate: "tool_call_update", ...task, status: "completed", content: [] }),
           respond("session/prompt", { stopReason: "end_turn" }),
           {
             ...update({

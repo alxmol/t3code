@@ -159,9 +159,14 @@ export function extractDroidSubagentUpdate(
   if (tool.data.name !== "Task") return undefined;
   const input = decodeTaskInput(tool.data.rawInput);
   if (Option.isNone(input)) return undefined;
-  const status =
-    tool.status === "failed" ? "failed" : tool.status === "completed" ? "completed" : "running";
   const output = record(tool.data.rawOutput)?.text;
+  // Droid 1.10 marks a running Task's call completed as the prompt ends; its result follows later.
+  const status =
+    tool.status === "failed"
+      ? "failed"
+      : tool.status === "completed" && output !== "Running in background"
+        ? "completed"
+        : "running";
   return {
     nativeTaskId: tool.toolCallId,
     childSessionId: null,
