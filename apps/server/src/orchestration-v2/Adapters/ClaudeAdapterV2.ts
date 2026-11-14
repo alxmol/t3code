@@ -374,10 +374,13 @@ const CLAUDE_ROOT_REFUSAL =
   "--dangerously-skip-permissions cannot be used with root/sudo privileges for security reasons";
 
 // fd 4 gates the launch until the server has recorded the process it is about to become.
+// The shell enters the cwd itself: as a native cwd, a mount that hangs chdir freezes the server.
 const CLAUDE_GROUP_WATCH_SCRIPT = [
   "read -r _ <&4 || exit 1",
   "exec 4<&-",
   "{ trap '' TERM; read -r _ <&3; kill -TERM 0; sleep 5; kill -KILL 0; } </dev/null >/dev/null 2>&1 &",
+  'cd -P -- "$1" || exit 125',
+  "shift",
   'exec "$@" 3<&-',
 ].join("\n");
 
@@ -394,11 +397,19 @@ export function spawnClaudeProcessGroup(
   onStderrClose: () => void = () => {},
   register?: (pid: number) => () => void,
 ): ClaudeSpawnedProcess & Pick<NodeChildProcess.ChildProcess, "pid"> {
+  // Relative to the server's cwd, as a native cwd is; the `./` keeps CDPATH out of it.
+  const cwd = options.cwd ?? ".";
   const child = NodeChildProcess.spawn(
     "/bin/sh",
-    ["-c", CLAUDE_GROUP_WATCH_SCRIPT, "t3-claude", options.command, ...options.args],
+    [
+      "-c",
+      CLAUDE_GROUP_WATCH_SCRIPT,
+      "t3-claude",
+      cwd.startsWith("/") ? cwd : `./${cwd}`,
+      options.command,
+      ...options.args,
+    ],
     {
-      cwd: options.cwd,
       env: options.env,
       signal: options.signal,
       stdio: ["pipe", "pipe", "pipe", "pipe", "pipe"],
@@ -2631,12 +2642,15 @@ export function makeClaudeUserMessage(input: {
   readonly text: string;
   readonly priority?: SDKUserMessage["priority"];
   readonly skills?: ReadonlyMap<string, ClaudeSkillTarget>;
+  readonly skillMentionsFrom?: number;
   readonly uuid?: SDKUserMessage["uuid"];
 }): SDKUserMessage {
   // Claude expands a skill only when `/name` starts the last text block.
   // Keep the whole request before that block; see ClaudeSkillDispatch.
   const dispatch =
-    input.skills === undefined ? undefined : planClaudeSkillDispatch(input.text, input.skills);
+    input.skills === undefined
+      ? undefined
+      : planClaudeSkillDispatch(input.text, input.skills, input.skillMentionsFrom);
   // Claude runs `/goal` only when it opens the prompt, so a goal stays one block.
   const isGoalCommand = parseGoalCommand({ text: input.text }) !== null;
   return {
@@ -2801,11 +2815,15 @@ const makeClaudeUserMessageWithAttachments = Effect.fnUntraced(function* (input:
   readonly fileSystem: FileSystem.FileSystem;
   readonly pdfReservation: Effect.Success<ReturnType<typeof reserveClaudePdfBudget>>;
   readonly skills?: ReadonlyMap<string, ClaudeSkillTarget>;
+  readonly skillMentionsFrom?: number;
 }) {
   if (input.attachments.length === 0) {
     const message = makeClaudeUserMessage({
       text: input.text,
       ...(input.skills === undefined ? {} : { skills: input.skills }),
+      ...(input.skillMentionsFrom === undefined
+        ? {}
+        : { skillMentionsFrom: input.skillMentionsFrom }),
       ...(input.priority === undefined ? {} : { priority: input.priority }),
       ...(input.uuid === undefined ? {} : { uuid: input.uuid }),
     });
@@ -2829,7 +2847,7 @@ const makeClaudeUserMessageWithAttachments = Effect.fnUntraced(function* (input:
   const dispatch =
     input.skills === undefined
       ? undefined
-      : planClaudeSkillDispatch(textWithAttachmentPaths, input.skills);
+      : planClaudeSkillDispatch(textWithAttachmentPaths, input.skills, input.skillMentionsFrom);
   const content: Array<ClaudeUserContentBlock> = [];
   // Base64 adds a third to the payload. Leave room below Anthropic's 32 MB
   // request limit for text, instructions, and SDK framing. The SDK does not
@@ -12422,15 +12440,24 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
               pdfBudgets.get(nativeThreadId)!,
               persistAttachmentBudget(nativeThreadId),
             );
+            const promptText = applyClaudePromptEffortPrefix(
+              turnInput.message.text,
+              compileClaudeModelSelection(turnInput.modelSelection, modelCatalog).promptEffort,
+            );
             const userMessage =
               promptUuid === null
                 ? null
                 : yield* makeClaudeUserMessageWithAttachments({
-                    text: applyClaudePromptEffortPrefix(
-                      turnInput.message.text,
-                      compileClaudeModelSelection(turnInput.modelSelection, modelCatalog)
-                        .promptEffort,
-                    ),
+                    text: promptText,
+                    // Mentions in inline handoff history are history, not this turn's skill.
+                    ...(turnInput.inlineContextLength === undefined
+                      ? {}
+                      : {
+                          skillMentionsFrom:
+                            promptText.length -
+                            turnInput.message.text.slice(turnInput.inlineContextLength).trimEnd()
+                              .length,
+                        }),
                     attachments: turnInput.message.attachments,
                     attachmentsDir,
                     fileSystem,
