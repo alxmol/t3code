@@ -98,6 +98,33 @@ function record(value: unknown): Record<string, unknown> | undefined {
 }
 
 /** Local installs launch the `droid` binary directly with no registry id. */
+const DROID_REASONING_LABELS: Readonly<Record<string, string>> = {
+  off: "Off",
+  none: "None",
+  minimal: "Minimal",
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+  xhigh: "Extra High",
+  max: "Maximum",
+};
+
+/** A model's reasoning levels from Droid's `_meta.factory`, in the `_meta` shape Grok uses. */
+export function droidModelReasoningMeta(
+  meta: Readonly<Record<string, unknown>> | null | undefined,
+): Readonly<Record<string, unknown>> | undefined {
+  const factory = meta?.factory;
+  if (!Predicate.isReadonlyObject(factory) || !Array.isArray(factory.supportedReasoningEfforts)) {
+    return undefined;
+  }
+  return {
+    reasoningEfforts: factory.supportedReasoningEfforts.flatMap((value: unknown) =>
+      typeof value === "string" ? [{ value, label: DROID_REASONING_LABELS[value] ?? value }] : [],
+    ),
+    reasoningEffort: factory.defaultReasoningEffort,
+  };
+}
+
 export function isDroidAgent(settings: {
   readonly source: string;
   readonly agentId: string;

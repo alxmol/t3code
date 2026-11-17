@@ -356,9 +356,10 @@ describe("acpRegistrySnapshotReadiness", () => {
     expect(twoModels.find((model) => model.slug === "glm")).toMatchObject({
       capabilities: { optionDescriptors: [{ id: "effort" }, { id: "mode" }] },
     });
+    // A model that has reported nothing yet offers the session's levels.
     expect(
       twoModels.find((model) => model.slug === "opus")?.capabilities?.optionDescriptors ?? [],
-    ).toEqual([sharedMode]);
+    ).toEqual([sharedMode, liveOptions[0]]);
     // A later session on another model keeps the options learned for this one.
     const afterOpus = applyAcpRegistryLiveConfiguration(
       afterGlm,
@@ -398,6 +399,17 @@ describe("acpRegistrySnapshotReadiness", () => {
             _meta: { reasoningEfforts: [{ value: "low", label: "Low" }], reasoningEffort: "low" },
           },
           { modelId: "glm", name: "GLM", _meta: { supportsReasoningEffort: false } },
+          {
+            modelId: "droid",
+            name: "Droid",
+            _meta: {
+              factory: {
+                supportedReasoningEfforts: ["off", "xhigh"],
+                defaultReasoningEffort: "xhigh",
+              },
+            },
+          },
+          { modelId: "plain", name: "Plain" },
         ],
       }),
       [],
@@ -413,6 +425,18 @@ describe("acpRegistrySnapshotReadiness", () => {
         },
       ],
       [],
+      [
+        {
+          ...liveOptions[0]!,
+          role: "reasoning",
+          options: [
+            { id: "off", label: "Off" },
+            { id: "xhigh", label: "Extra High" },
+          ],
+          currentValue: "xhigh",
+        },
+      ],
+      [{ ...liveOptions[0]!, role: "reasoning" }],
     ]);
   });
 

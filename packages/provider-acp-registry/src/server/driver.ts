@@ -178,6 +178,9 @@ function modelsFromDiscovery(
     (descriptor) => !modelOptionIds.has(descriptor.id),
   );
   const sharedIds = new Set(shared.map((descriptor) => descriptor.id));
+  const currentModelOptions = (discovery?.configOptions ?? []).filter((descriptor) =>
+    modelOptionIds.has(descriptor.id),
+  );
   const capabilitiesFor = ({ id: slug, reasoningEffort }: AcpRegistryProbeModel) => {
     if (slug === discovery?.currentModelId) return capabilities;
     // The levels a model advertises replace the ones an earlier session reported.
@@ -190,7 +193,15 @@ function modelsFromDiscovery(
           descriptor.type !== "select" ||
           descriptor.role !== "reasoning"),
     );
-    const optionDescriptors = [...shared, ...own, ...(reasoningEffort ? [reasoningEffort] : [])];
+    // A model that says nothing and has run no session yet offers the current model's
+    // options; a session skips any value its model does not advertise.
+    const assumed = reasoningEffort === undefined && own.length === 0 ? currentModelOptions : [];
+    const optionDescriptors = [
+      ...shared,
+      ...own,
+      ...assumed,
+      ...(reasoningEffort ? [reasoningEffort] : []),
+    ];
     return optionDescriptors.length === 0
       ? EMPTY_CAPABILITIES
       : createModelCapabilities({ optionDescriptors });

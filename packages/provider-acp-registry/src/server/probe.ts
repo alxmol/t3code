@@ -35,6 +35,7 @@ import {
   flattenSelectChoices,
 } from "@t3tools/provider-acp/server/sessionConfig";
 import * as AcpRegistryRuntimeCoordinator from "./AcpRegistryRuntimeCoordinator.ts";
+import { droidModelReasoningMeta } from "./droidAcp.ts";
 import * as AcpSessionRuntime from "@t3tools/provider-acp/server/AcpSessionRuntime";
 
 const MAX_AUTH_METHODS = 32;
@@ -62,8 +63,9 @@ const boundedOpaqueValue = (value: string, maximumLength: number): string | unde
  */
 function advertisedReasoningEffort(
   option: EffectAcpSchema.SessionConfigOption | undefined,
-  meta: Readonly<Record<string, unknown>> | null | undefined,
+  modelMeta: Readonly<Record<string, unknown>> | null | undefined,
 ): AcpRegistryProbeModel["reasoningEffort"] {
+  const meta = droidModelReasoningMeta(modelMeta) ?? modelMeta;
   if (option?.type !== "select" || meta == null) return undefined;
   if (meta.supportsReasoningEffort === false) return null;
   if (!Array.isArray(meta.reasoningEfforts)) return undefined;
