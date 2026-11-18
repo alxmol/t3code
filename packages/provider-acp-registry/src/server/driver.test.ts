@@ -356,9 +356,23 @@ describe("acpRegistrySnapshotReadiness", () => {
     expect(twoModels.find((model) => model.slug === "glm")).toMatchObject({
       capabilities: { optionDescriptors: [{ id: "effort" }, { id: "mode" }] },
     });
-    // A model that has reported nothing yet offers the session's levels.
     expect(
       twoModels.find((model) => model.slug === "opus")?.capabilities?.optionDescriptors ?? [],
+    ).toEqual([sharedMode]);
+    // Devin names no levels per model, so one that has reported nothing offers the session's.
+    expect(
+      applyAcpRegistryLiveConfiguration(
+        provider,
+        {
+          models: twoModelList,
+          currentModelId: "glm",
+          configOptions: [...liveOptions, sharedMode],
+          modelOptionIds: ["effort"],
+        },
+        [],
+        provider.models,
+        true,
+      ).models.find((model) => model.slug === "opus")?.capabilities?.optionDescriptors ?? [],
     ).toEqual([sharedMode, liveOptions[0]]);
     // A later session on another model keeps the options learned for this one.
     const afterOpus = applyAcpRegistryLiveConfiguration(
@@ -436,7 +450,7 @@ describe("acpRegistrySnapshotReadiness", () => {
           currentValue: "xhigh",
         },
       ],
-      [{ ...liveOptions[0]!, role: "reasoning" }],
+      [],
     ]);
   });
 

@@ -105,6 +105,7 @@ export function updateAcpRegistryEnrichmentCache(input: {
   readonly configuration: AcpRegistryLiveConfiguration;
   readonly customModels: ReadonlyArray<CustomModelSetting>;
   readonly now: number;
+  readonly assumeCurrentModelOptions?: boolean;
 }): AcpRegistryEnrichmentCache {
   const { cache, configuration, customModels, now } = input;
   if (cache.entry === null) {
@@ -117,6 +118,8 @@ export function updateAcpRegistryEnrichmentCache(input: {
     cache.entry.provider,
     configuration,
     customModels,
+    cache.entry.provider.models,
+    input.assumeCurrentModelOptions,
   );
   if (Equal.equals(provider, cache.entry.provider)) return cache;
   return {
@@ -133,6 +136,10 @@ export function updateAcpRegistryEnrichmentCache(input: {
   };
 }
 const EMPTY_CAPABILITIES = createModelCapabilities({ optionDescriptors: [] });
+const isDevinAgent = (settings: Pick<AcpRegistrySettings, "source" | "agentId" | "commandPath">) =>
+  settings.source === "local"
+    ? /^devin(\.exe|\.cmd)?$/i.test(settings.commandPath.split(/[\\/]/).pop() ?? "")
+    : settings.agentId === "devin";
 const MAINTENANCE = makeManualOnlyProviderMaintenanceCapabilities({
   provider: DRIVER_KIND,
   packageName: null,
@@ -165,6 +172,7 @@ function modelsFromDiscovery(
     | undefined,
   customModels: ReadonlyArray<CustomModelSetting>,
   previousModels: ReadonlyArray<ServerProviderModel> = [],
+  assumeCurrentModelOptions = false,
 ): ReadonlyArray<ServerProviderModel> {
   const discovered = discovery?.models ?? [];
   const capabilities =
@@ -193,9 +201,12 @@ function modelsFromDiscovery(
           descriptor.type !== "select" ||
           descriptor.role !== "reasoning"),
     );
-    // A model that says nothing and has run no session yet offers the current model's
-    // options; a session skips any value its model does not advertise.
-    const assumed = reasoningEffort === undefined && own.length === 0 ? currentModelOptions : [];
+    // Devin names no levels per model: one that has run no session yet offers the current
+    // model's options, and a session skips any value its model does not advertise.
+    const assumed =
+      assumeCurrentModelOptions && reasoningEffort === undefined && own.length === 0
+        ? currentModelOptions
+        : [];
     const optionDescriptors = [
       ...shared,
       ...own,
@@ -336,7 +347,12 @@ function baseSnapshot(
             : input.settings.agentId.length > 0),
     },
     ...(input.message ? { message: input.message } : {}),
-    models: modelsFromDiscovery(input.probe?.probe, input.settings.customModels),
+    models: modelsFromDiscovery(
+      input.probe?.probe,
+      input.settings.customModels,
+      [],
+      isDevinAgent(input.settings),
+    ),
     ...(input.probe === undefined
       ? {}
       : {
@@ -368,6 +384,7 @@ export function applyAcpRegistryLiveConfiguration(
   configuration: AcpRegistryLiveConfiguration,
   customModels: ReadonlyArray<CustomModelSetting>,
   previousModels: ReadonlyArray<ServerProviderModel> = provider.models,
+  assumeCurrentModelOptions = false,
 ): ServerProvider {
   const { message: _staleProbeMessage, ...snapshot } = provider;
   // session/load may omit models (Kimi returns `{}`); keep the probed list
@@ -410,6 +427,7 @@ export function applyAcpRegistryLiveConfiguration(
             discovery,
             customModels,
             previousModels.filter((model) => !model.isCustom),
+            assumeCurrentModelOptions,
           ),
   };
 }
@@ -712,6 +730,7 @@ export const AcpRegistryDriver: ProviderDriver<AcpRegistrySettings, AcpRegistryD
           configuration,
           effectiveConfig.customModels,
           learned.length > 0 ? learned : provider.models,
+          isDevinAgent(effectiveConfig),
         );
         return [next, next.models === provider.models ? learned : next.models];
       });
@@ -919,6 +938,7 @@ export const AcpRegistryDriver: ProviderDriver<AcpRegistrySettings, AcpRegistryD
                           configuration,
                           customModels: effectiveConfig.customModels,
                           now,
+                          assumeCurrentModelOptions: isDevinAgent(effectiveConfig),
                         }),
                       ),
                     ),
