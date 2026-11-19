@@ -281,9 +281,6 @@ export const makeAcpRegistryAdapterV2 = Effect.fn("makeAcpRegistryAdapterV2")(fu
           leftSelectedOption: droidLeftSpec,
           extractSubagentUpdate: extractDroidSubagentUpdate,
           normalizeToolCall: normalizeDroidToolCall,
-          // Droid 1.9 can answer the prompt while a Task runs, then report it and carry on.
-          deferFinalizeForBackgroundWork: true,
-          enablePostSettleContinuation: true,
         }
       : isOmp
         ? { extractElicitationForm: extractOmpElicitationForm }
@@ -322,9 +319,10 @@ export const makeAcpRegistryAdapterV2 = Effect.fn("makeAcpRegistryAdapterV2")(fu
     // Hermes is not in the public registry and may run through a wrapper, so only its
     // initialize reply identifies it. agy does the same and is known by its command.
     enablePostSettleContinuation: (initializeResult) =>
-      isAntigravityCli || isHermes(initializeResult),
+      isDroid || isAntigravityCli || isHermes(initializeResult),
+    // Droid 1.9 can answer the prompt while a Task runs, then report it and carry on.
     deferFinalizeForBackgroundWork: (initializeResult) =>
-      isAntigravityCli || isHermes(initializeResult),
+      isDroid || isAntigravityCli || isHermes(initializeResult),
     ...(isDevin
       ? {
           clientCapabilitiesMeta: {

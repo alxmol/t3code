@@ -269,8 +269,15 @@ export function normalizeDroidToolCall(tool: AcpToolCallState): AcpToolCallState
         kind: "search",
         title: `Listed ${directoryName(input?.directory_path) ?? "directory"}`,
       };
-    case "ToolSearch":
-      return { ...tool, kind: "other", ...(title === undefined ? {} : { title }) };
+    case "ToolSearch": {
+      // Its "search" kind titles the row as a file search; Droid's own title names the tools.
+      const toolSearchTitle = droidTitle ?? title;
+      return {
+        ...tool,
+        kind: "other",
+        ...(toolSearchTitle === undefined ? {} : { title: toolSearchTitle }),
+      };
+    }
     default:
       return title === undefined || title === tool.title ? tool : { ...tool, title };
   }
