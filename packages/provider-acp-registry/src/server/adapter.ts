@@ -17,7 +17,6 @@ import {
   droidSpecMarkdown,
   extractDroidElicitationForm,
   extractDroidSubagentUpdate,
-  isDroidAgent,
   isDroidPlanModeId,
   normalizeDroidToolCall,
 } from "./droidAcp.ts";
@@ -208,7 +207,6 @@ export const makeAcpRegistryAdapterV2 = Effect.fn("makeAcpRegistryAdapterV2")(fu
   const startupKey =
     options.settings.source === "local" ? `local:${options.instanceId}` : registryAgentId;
   const isDevin = registryAgentId === "devin";
-  const isDroid = isDroidAgent(options.settings);
   const isAntigravityCli =
     options.settings.source === "local" &&
     /^agy(\.exe|\.cmd)?$/i.test(options.settings.commandPath.split(/[\\/]/).pop() ?? "");
@@ -235,6 +233,24 @@ export const makeAcpRegistryAdapterV2 = Effect.fn("makeAcpRegistryAdapterV2")(fu
     registryAgentId === "claude-acp" ||
     (options.settings.source === "local" &&
       /^claude-agent-acp(\.exe|\.cmd)?$/i.test(
+        options.settings.commandPath.split(/[\\/]/).pop() ?? "",
+      ));
+  const isDroid =
+    registryAgentId === "factory-droid" ||
+    (options.settings.source === "local" &&
+      /^(?:factory-)?droid(\.exe|\.cmd)?$/i.test(
+        options.settings.commandPath.split(/[\\/]/).pop() ?? "",
+      ));
+  const isGlm =
+    registryAgentId === "glm-acp-agent" ||
+    (options.settings.source === "local" &&
+      /^glm(?:-acp-agent)?(\.exe|\.cmd)?$/i.test(
+        options.settings.commandPath.split(/[\\/]/).pop() ?? "",
+      ));
+  const isVibe =
+    registryAgentId === "mistral-vibe" ||
+    (options.settings.source === "local" &&
+      /^(?:mistral-)?vibe(?:-acp)?(\.exe|\.cmd)?$/i.test(
         options.settings.commandPath.split(/[\\/]/).pop() ?? "",
       ));
   const runtimeOptions = isClaude
@@ -268,7 +284,8 @@ export const makeAcpRegistryAdapterV2 = Effect.fn("makeAcpRegistryAdapterV2")(fu
     customModels: readCustomModelEntries(options.settings.customModels).map((entry) => entry.slug),
     compactViaAdvertisedCommand: true,
     ...(isAntigravityCli ? { wakeOnDetachedRequest: true, replyEndsWithUsageUpdate: true } : {}),
-    promptFailure: (cause) => acpRegistryPromptFailure(registryAgentId, cause),
+    promptFailure: (cause) =>
+      acpRegistryPromptFailure(isVibe ? "mistral-vibe" : registryAgentId, cause),
     ...(isDroid
       ? {
           runtimeHarness: "Droid",
@@ -288,7 +305,7 @@ export const makeAcpRegistryAdapterV2 = Effect.fn("makeAcpRegistryAdapterV2")(fu
           ? { extractElicitationForm: extractOpenCodeElicitationForm }
           : {}),
     // glm-acp-agent is the one agent whose per-turn usage a live probe has verified.
-    ...(registryAgentId === "glm-acp-agent" ? { reportsPerTurnPromptUsage: true } : {}),
+    ...(isGlm ? { reportsPerTurnPromptUsage: true } : {}),
     ...(watchKimiPromptOutcome === undefined
       ? {}
       : {
@@ -303,9 +320,7 @@ export const makeAcpRegistryAdapterV2 = Effect.fn("makeAcpRegistryAdapterV2")(fu
                 ),
             ),
         }),
-    ...(registryAgentId === "mistral-vibe"
-      ? { registerExtensions: registerMistralVibeAcpExtensions }
-      : {}),
+    ...(isVibe ? { registerExtensions: registerMistralVibeAcpExtensions } : {}),
     ...(isClaude
       ? {
           followAgentWorkState: true,

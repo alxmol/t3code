@@ -669,6 +669,8 @@ export const AcpRegistryDriver: ProviderDriver<AcpRegistrySettings, AcpRegistryD
     }
     const random = yield* SecureRandom.SecureRandom;
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+    const fileSystem = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
     const hostEnvironment = yield* HostProcess.Environment;
     const host = yield* ProviderHost.ProviderHost;
     const continuationIdentity = defaultProviderContinuationIdentity({
@@ -782,8 +784,6 @@ export const AcpRegistryDriver: ProviderDriver<AcpRegistrySettings, AcpRegistryD
       ),
       Effect.flatMap(withLiveRuntimeState),
     );
-    const fileSystem = yield* FileSystem.FileSystem;
-    const path = yield* Path.Path;
     const httpClient = yield* Effect.serviceOption(HttpClient.HttpClient);
     // Kept out of the initial snapshot, which must not wait on Droid's local bridge.
     const checkProvider =
@@ -812,6 +812,8 @@ export const AcpRegistryDriver: ProviderDriver<AcpRegistrySettings, AcpRegistryD
     ).pipe(
       Effect.provideService(AcpRegistrySupport.AcpRegistryCatalog, catalog),
       Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+      Effect.provideService(FileSystem.FileSystem, fileSystem),
+      Effect.provideService(Path.Path, path),
       Effect.provideService(SecureRandom.SecureRandom, random),
     );
     const enrichmentCache = yield* Ref.make<AcpRegistryEnrichmentCache>({
