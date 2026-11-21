@@ -17,6 +17,7 @@ import {
   droidSpecMarkdown,
   extractDroidSubagentUpdate,
   isDroidAgent,
+  isDroidEmptyUsageUpdate,
   normalizeDroidToolCall,
 } from "./droidAcp.ts";
 
@@ -339,5 +340,16 @@ describe("isDroidAgent", () => {
     expect(
       isDroidAgent({ source: "local", agentId: "factory-droid", commandPath: "/bin/kiro" }),
     ).toBe(false);
+  });
+});
+
+describe("isDroidEmptyUsageUpdate", () => {
+  it("drops only a usage report of zero tokens", () => {
+    const usage = (used: number) => ({
+      sessionId: "droid-session",
+      update: { sessionUpdate: "usage_update" as const, used, size: 600_000 },
+    });
+    expect(isDroidEmptyUsageUpdate(usage(0))).toBe(true);
+    expect(isDroidEmptyUsageUpdate(usage(21_215))).toBe(false);
   });
 });

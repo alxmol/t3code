@@ -65,6 +65,7 @@ import {
 import * as AcpRegistrySupport from "./AcpRegistrySupport.ts";
 import * as AcpRegistryRuntimeCoordinator from "./AcpRegistryRuntimeCoordinator.ts";
 import { isDroidAgent } from "./droidAcp.ts";
+import { DROID_CONTEXT_COMMAND } from "./droidContext.ts";
 import { readDroidSubscriptionUsageLimits } from "./droidUsageLimits.ts";
 import * as AcpRegistryAuth from "./auth.ts";
 import * as AcpRegistryAuthenticationState from "./authenticationState.ts";
@@ -136,6 +137,15 @@ export function updateAcpRegistryEnrichmentCache(input: {
   };
 }
 const EMPTY_CAPABILITIES = createModelCapabilities({ optionDescriptors: [] });
+// Droid advertises none of its built-in commands over ACP; T3 answers this one itself.
+const probeDroidConfiguration: typeof probeAcpRegistryConfiguration = (input) =>
+  probeAcpRegistryConfiguration(input).pipe(
+    Effect.map((result) => ({
+      ...result,
+      slashCommands: [...result.slashCommands, DROID_CONTEXT_COMMAND],
+    })),
+  );
+
 const isDevinAgent = (settings: Pick<AcpRegistrySettings, "source" | "agentId" | "commandPath">) =>
   settings.source === "local"
     ? /^devin(\.exe|\.cmd)?$/i.test(settings.commandPath.split(/[\\/]/).pop() ?? "")
@@ -808,7 +818,7 @@ export const AcpRegistryDriver: ProviderDriver<AcpRegistrySettings, AcpRegistryD
         ...readinessInput,
         cwd: host.paths.cwd,
       },
-      probeAcpRegistryConfiguration,
+      isDroidAgent(effectiveConfig) ? probeDroidConfiguration : probeAcpRegistryConfiguration,
     ).pipe(
       Effect.provideService(AcpRegistrySupport.AcpRegistryCatalog, catalog),
       Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),

@@ -135,6 +135,11 @@ export function isDroidAgent(settings: {
     : settings.agentId === "factory-droid";
 }
 
+// Droid reports zero tokens before a session's first reply and after a command Claude Code answers itself.
+export const isDroidEmptyUsageUpdate: NonNullable<AcpAdapterV2Flavor["ignoreSessionUpdate"]> = (
+  notification,
+) => notification.update.sessionUpdate === "usage_update" && notification.update.used === 0;
+
 export const isDroidPlanModeId = (modeId: string) => modeId === "spec";
 
 // Droid 1.7 leaves Spec mode through an ExitSpecMode permission request that carries the spec.

@@ -140,6 +140,8 @@ const openDroidTurn = Effect.fn("DroidAcpAdapterV2Test.openDroidTurn")(function*
   readonly entries: ReadonlyArray<unknown>;
   readonly replayGate?: ReturnType<typeof makeProviderReplayGate>;
   readonly onContinuationOffered?: Effect.Effect<void>;
+  readonly message?: { readonly messageText: string };
+  readonly readDroidContext?: Parameters<typeof makeAcpRegistryAdapterV2>[0]["readDroidContext"];
 }) {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -174,6 +176,7 @@ const openDroidTurn = Effect.fn("DroidAcpAdapterV2Test.openDroidTurn")(function*
     ...(input.onContinuationOffered === undefined
       ? {}
       : { continuationRequests: { offer: () => input.onContinuationOffered! } }),
+    ...(input.readDroidContext === undefined ? {} : { readDroidContext: input.readDroidContext }),
     makeRuntime: makeAcpReplayRuntime({
       transcript,
       statusPath: path.join(directory, "status.json"),
@@ -229,7 +232,7 @@ const openDroidTurn = Effect.fn("DroidAcpAdapterV2Test.openDroidTurn")(function*
       }),
     );
   });
-  yield* startTurn(1);
+  yield* startTurn(1, input.message);
   return { runtime, startTurn };
 });
 
@@ -328,6 +331,40 @@ describe("Droid over ACP", () => {
     }).pipe(Effect.provide(layerTest), Effect.scoped),
   );
 
+  it.live("answers /context from Droid's own figures without a model call", () =>
+    Effect.gen(function* () {
+      const { runtime } = yield* openDroidTurn({
+        scenario: "context-command",
+        interactionMode: "default",
+        message: { messageText: "/context" },
+        readDroidContext: () =>
+          Effect.succeed({
+            modelDisplayName: "Haiku 5.5",
+            contextBudget: 600_000,
+            usedTokens: 21_908,
+            freeTokens: 578_092,
+            categories: [{ name: "Messages", tokens: 6_422 }],
+          }),
+        // No session/prompt: the replayed Droid rejects one it does not expect.
+        entries: [],
+      });
+      const events = yield* runtime.events.pipe(
+        Stream.takeUntil((event) => event.type === "turn.terminal"),
+        Stream.runCollect,
+      );
+      const reply = events
+        .flatMap((event) =>
+          event.type === "turn_item.updated" && event.turnItem.type === "assistant_message"
+            ? [event.turnItem.text]
+            : [],
+        )
+        .at(-1);
+      assert.include(reply, "**Context** · Haiku 5.5 · 21.9k of 600k tokens (3.7%)");
+      assert.include(reply, "| Messages | 6.4k | 1.1% |");
+      const terminal = events.at(-1);
+      assert.equal(terminal?.type === "turn.terminal" ? terminal.status : undefined, "completed");
+    }).pipe(Effect.provide(layerTest), Effect.scoped),
+  );
   // Factory Droid 1.9.0 runs a Task in the background and may answer the prompt before it ends.
   it.live("keeps the turn open for a Task that outlives the prompt", () =>
     Effect.gen(function* () {

@@ -17,9 +17,15 @@ import {
   droidSpecMarkdown,
   extractDroidElicitationForm,
   extractDroidSubagentUpdate,
+  isDroidEmptyUsageUpdate,
   isDroidPlanModeId,
   normalizeDroidToolCall,
 } from "./droidAcp.ts";
+import {
+  DROID_CONTEXT_COMMAND,
+  readDroidContextBreakdown,
+  withDroidContextCommand,
+} from "./droidContext.ts";
 import { makeKimiPromptOutcomeWatch } from "./kimiAcp.ts";
 import { extractOmpElicitationForm } from "./ompAcp.ts";
 import { extractOpenCodeElicitationForm } from "./opencodeAcp.ts";
@@ -97,6 +103,7 @@ export interface AcpRegistryAdapterV2Options {
   >;
   readonly continuationRequests?: Parameters<typeof makeAcpAdapterV2>[0]["continuationRequests"];
   readonly assertComplete?: Effect.Effect<void, EffectAcpErrors.AcpError>;
+  readonly readDroidContext?: Parameters<typeof withDroidContextCommand>[1];
 }
 
 // Mistral Vibe's application rate-limit code, outside ACP.
@@ -192,6 +199,42 @@ function makeAcpRegistryRuntime(
     });
 }
 
+function makeDroidContextRuntime(
+  options: AcpRegistryAdapterV2Options,
+  catalog: AcpRegistrySupport.AcpRegistryCatalog["Service"],
+  makeRuntime: ReturnType<typeof makeAcpRegistryRuntime>,
+): ReturnType<typeof makeAcpRegistryRuntime> {
+  return (input) =>
+    Effect.gen(function* () {
+      const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+      const runtime = yield* makeRuntime(input);
+      return withDroidContextCommand(
+        runtime,
+        options.readDroidContext ??
+          ((sessionId) =>
+            catalog.resolve(options.settings, input.cwd, options.environment).pipe(
+              Effect.mapError(
+                (cause) =>
+                  new EffectAcpErrors.AcpSpawnError({
+                    command: options.settings.agentId || ACP_REGISTRY_PROVIDER,
+                    cause,
+                  }),
+              ),
+              Effect.flatMap((resolved) =>
+                readDroidContextBreakdown({
+                  command: resolved.spawn.command,
+                  env: { ...resolved.spawn.env, ...input.processEnvironment },
+                  cwd: input.cwd,
+                  sessionId,
+                }),
+              ),
+              Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+              Effect.scoped,
+            )),
+      );
+    });
+}
+
 const isHermes = (
   initializeResult: AcpSessionRuntime.AcpSessionRuntimeStartResult["initializeResult"],
 ) => initializeResult.agentInfo?.name === "hermes-agent";
@@ -272,6 +315,7 @@ export const makeAcpRegistryAdapterV2 = Effect.fn("makeAcpRegistryAdapterV2")(fu
   // the unquoted "T3 Code (Beta).exe" path). Both take T3's MCP endpoint over ACP HTTP.
   const useHttpMcpServers =
     copilotRouting !== undefined || prefersHttpMcpTransport(options.settings);
+  const makeRuntime = options.makeRuntime ?? makeAcpRegistryRuntime(runtimeOptions, catalog);
   const flavor: AcpAdapterV2Flavor = {
     driver: ACP_REGISTRY_PROVIDER,
     // Cancelling a Copilot prompt also kills the background agents it started.
@@ -289,6 +333,7 @@ export const makeAcpRegistryAdapterV2 = Effect.fn("makeAcpRegistryAdapterV2")(fu
     ...(isDroid
       ? {
           runtimeHarness: "Droid",
+          ignoreSessionUpdate: isDroidEmptyUsageUpdate,
           promptFailure: droidPromptFailure,
           extractElicitationForm: extractDroidElicitationForm,
           isPlanModeId: isDroidPlanModeId,
@@ -365,14 +410,16 @@ export const makeAcpRegistryAdapterV2 = Effect.fn("makeAcpRegistryAdapterV2")(fu
           alwaysSetModel: true,
         }),
     mcpOverHttp: useHttpMcpServers,
-    makeRuntime: options.makeRuntime ?? makeAcpRegistryRuntime(runtimeOptions, catalog),
+    makeRuntime: isDroid ? makeDroidContextRuntime(options, catalog, makeRuntime) : makeRuntime,
     ...(runtimeCoordinator === undefined
       ? {}
       : {
           onAvailableCommandsUpdate: (commands) =>
             runtimeCoordinator.publishAvailableCommands(
               options.instanceId,
-              normalizeAcpRegistryCommands(commands),
+              normalizeAcpRegistryCommands(
+                isDroid ? [...commands, DROID_CONTEXT_COMMAND] : commands,
+              ),
             ),
           // A new Copilot session starts at its own effort, not the one the composer shows.
           ...(isCopilot
