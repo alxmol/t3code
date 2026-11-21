@@ -164,6 +164,20 @@ export const droidPermissionDisposition: NonNullable<
       ? "deny"
       : "ask";
 
+// T3 answers with the first option of a kind, so each choice carries that option's own name:
+// Droid's "always" raises its autonomy level, which "Always allow this session" does not say.
+export const droidApprovalOptions: NonNullable<AcpAdapterV2Flavor["approvalOptions"]> = (request) =>
+  (
+    [
+      ["reject_once", "decline"],
+      ["allow_always", "acceptForSession"],
+      ["allow_once", "accept"],
+    ] as const
+  ).flatMap(([kind, decision]) => {
+    const label = request.options.find((option) => option.kind === kind)?.name.trim();
+    return label ? [{ decision, label }] : [];
+  });
+
 // An approved spec moves Droid to another autonomy level while the thread still selects Spec.
 // Only Spec returns: a level Droid raised for an "always allow" answer is the user's own choice.
 export const droidLeftSpec: NonNullable<AcpAdapterV2Flavor["leftSelectedOption"]> = (

@@ -14,6 +14,7 @@ import { DEVIN_USAGE_COMMAND, readDevinUsage, withDevinUsageCommand } from "./de
 import * as PtyAdapter from "@t3tools/shared/PtyAdapter";
 import {
   DROID_ORCHESTRATION_INSTRUCTIONS,
+  droidApprovalOptions,
   droidLeftSpec,
   droidPermissionDisposition,
   droidPromptFailure,
@@ -373,6 +374,7 @@ export const makeAcpRegistryAdapterV2 = Effect.fn("makeAcpRegistryAdapterV2")(fu
           orchestrationInstructions: DROID_ORCHESTRATION_INSTRUCTIONS,
           proposedPlanFromPermissionRequest: droidSpecMarkdown,
           permissionDisposition: droidPermissionDisposition,
+          approvalOptions: droidApprovalOptions,
           leftSelectedOption: droidLeftSpec,
           extractSubagentUpdate: extractDroidSubagentUpdate,
           normalizeToolCall: normalizeDroidToolCall,

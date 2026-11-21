@@ -11,6 +11,7 @@ import type * as AcpSchema from "effect-acp/compat";
 import * as AcpErrors from "effect-acp/errors";
 
 import {
+  droidApprovalOptions,
   droidLeftSpec,
   droidPermissionDisposition,
   droidPromptFailure,
@@ -88,6 +89,17 @@ describe("Droid spec approval", () => {
   it("leaves every other request to the runtime policy", () => {
     expect(droidSpecMarkdown(editRequest)).toBeUndefined();
     expect(droidPermissionDisposition(policy("default"), editRequest)).toBe("allow");
+  });
+
+  it("offers Droid's own choices under Droid's names", () => {
+    expect(droidApprovalOptions(specRequest)).toEqual([
+      { decision: "decline", label: "No, keep iterating on spec" },
+      { decision: "acceptForSession", label: "Allow & auto-run (low risk)" },
+      { decision: "accept", label: "Allow" },
+    ]);
+    expect(
+      droidApprovalOptions({ ...editRequest, options: specRequest.options.slice(0, 1) }),
+    ).toEqual([{ decision: "accept", label: "Allow" }]);
   });
 
   it("returns to Spec after an approved spec, and leaves every other level where Droid put it", () => {
