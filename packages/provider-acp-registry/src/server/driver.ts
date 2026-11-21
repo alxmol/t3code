@@ -763,6 +763,7 @@ export const AcpRegistryDriver: ProviderDriver<AcpRegistrySettings, AcpRegistryD
     const devinUsage = yield* Ref.make<{
       readonly readAt: number;
       readonly usage: DevinUsage | undefined;
+      readonly stale?: true;
     } | null>(null);
     const devinUsageReading = yield* Ref.make(false);
     let refreshSnapshot: Effect.Effect<void> = Effect.void;
@@ -774,7 +775,7 @@ export const AcpRegistryDriver: ProviderDriver<AcpRegistrySettings, AcpRegistryD
       const now = yield* Clock.currentTimeMillis;
       const cached = yield* Ref.get(devinUsage);
       if (
-        (cached === null || now - cached.readAt > DEVIN_USAGE_TTL_MS) &&
+        (cached === null || cached.stale || now - cached.readAt > DEVIN_USAGE_TTL_MS) &&
         !(yield* Ref.getAndSet(devinUsageReading, true))
       ) {
         yield* readDevinUsage({ ...devin, pty: pty.value }).pipe(
@@ -948,6 +949,11 @@ export const AcpRegistryDriver: ProviderDriver<AcpRegistrySettings, AcpRegistryD
       // Inspection may fetch the registry when its disk cache is missing; creation must not wait on that.
       initialSnapshot: () => buildInitialAcpRegistrySnapshot(readinessInput),
       checkProvider,
+      // A usage-limit failure outdates the last Devin reading; its rows stay until the next lands.
+      invalidateUsageCache: Ref.update(
+        devinUsage,
+        (cached) => cached && { ...cached, stale: true as const },
+      ),
       enrichSnapshot: Effect.fn("enrichSnapshot")(function ({
         snapshot,
         getSnapshot,

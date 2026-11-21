@@ -9,6 +9,7 @@ import {
   extractDevinSubagentUpdate,
 } from "./devinAcp.ts";
 import { devinSessionPermissionOptions } from "./devinPermissions.ts";
+import { devinQuotaFailure, withDevinQuota } from "./devinQuota.ts";
 import { withDevinToolRows } from "./devinToolRows.ts";
 import { DEVIN_USAGE_COMMAND, readDevinUsage, withDevinUsageCommand } from "./devinUsage.ts";
 import * as PtyAdapter from "@t3tools/shared/PtyAdapter";
@@ -250,28 +251,25 @@ function makeDevinRuntime(
   makeRuntime: ReturnType<typeof makeAcpRegistryRuntime>,
   pty: Option.Option<PtyAdapter.PtyAdapter["Service"]>,
 ): ReturnType<typeof makeAcpRegistryRuntime> {
-  return (input) =>
-    makeRuntime(input).pipe(
-      Effect.map((runtime) =>
-        withDevinUsageCommand(
-          withDevinToolRows(runtime),
-          Option.isNone(pty)
-            ? Effect.undefined
-            : catalog.resolve(options.settings, input.cwd, options.environment).pipe(
-                Effect.flatMap((resolved) =>
-                  readDevinUsage({
-                    pty: pty.value,
-                    command: resolved.spawn.command,
-                    env: { ...resolved.spawn.env, ...input.processEnvironment },
-                  }),
-                ),
-                Effect.scoped,
-                Effect.orElseSucceed(() => undefined),
-              ),
-          options.displayName,
-        ),
-      ),
+  return (input) => {
+    const readUsage = Option.isNone(pty)
+      ? Effect.undefined
+      : catalog.resolve(options.settings, input.cwd, options.environment).pipe(
+          Effect.flatMap((resolved) =>
+            readDevinUsage({
+              pty: pty.value,
+              command: resolved.spawn.command,
+              env: { ...resolved.spawn.env, ...input.processEnvironment },
+            }),
+          ),
+          Effect.scoped,
+          Effect.orElseSucceed(() => undefined),
+        );
+    return makeRuntime(input).pipe(
+      Effect.flatMap((runtime) => withDevinQuota(withDevinToolRows(runtime), readUsage)),
+      Effect.map((runtime) => withDevinUsageCommand(runtime, readUsage, options.displayName)),
     );
+  };
 }
 
 export const makeAcpRegistryAdapterV2 = Effect.fn("makeAcpRegistryAdapterV2")(function* (
@@ -430,6 +428,8 @@ export const makeAcpRegistryAdapterV2 = Effect.fn("makeAcpRegistryAdapterV2")(fu
           normalizeToolCall: normalizeDevinToolCall,
           extractSubagentUpdate: extractDevinSubagentUpdate,
           answerablePermissionOptions: devinSessionPermissionOptions,
+          promptFailure: (cause: unknown) =>
+            devinQuotaFailure(cause) ?? acpRegistryPromptFailure(registryAgentId, cause),
         }
       : {}),
     ...(copilotRouting === undefined

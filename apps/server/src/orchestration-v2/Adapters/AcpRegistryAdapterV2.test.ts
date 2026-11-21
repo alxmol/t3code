@@ -2928,6 +2928,88 @@ describe("AcpRegistryAdapterV2", () => {
     }).pipe(Effect.provide(layerTest), Effect.scoped),
   );
 
+  it.effect.each(["error", "notification"] as const)(
+    "fails a Devin turn that ran out of quota as a usage limit (%s)",
+    (route) =>
+      Effect.gen(function* () {
+        const session = yield* openClaudeReplaySession(
+          [
+            ...claudeFrames.open.map((entry) =>
+              entry.frame.method === "initialize" && entry.type === "emit_inbound"
+                ? {
+                    ...entry,
+                    frame: {
+                      ...entry.frame,
+                      result: { protocolVersion: 1, agentCapabilities: {}, authMethods: [] },
+                    },
+                  }
+                : entry,
+            ),
+            {
+              type: "expect_outbound",
+              frame: { kind: "request", method: "session/prompt", params: "<any>" },
+            },
+            ...(route === "error"
+              ? [
+                  {
+                    type: "emit_inbound",
+                    frame: {
+                      kind: "response",
+                      method: "session/prompt",
+                      // The quota example in the help of Devin's own /debug-echo.
+                      error: {
+                        code: -32011,
+                        message: "Quota exhausted.",
+                        data: {
+                          "cognition.ai/errorKind": "resource_exhausted",
+                          "cognition.ai/retryable": true,
+                        },
+                      },
+                    },
+                  },
+                ]
+              : [
+                  {
+                    type: "emit_inbound",
+                    frame: {
+                      kind: "notification",
+                      method: "_cognition.ai/agent_stopped",
+                      params: {
+                        cause: "quota_exhausted",
+                        errorMessage: "Quota exhausted.",
+                        stats: { toolCalls: 0, inputTokens: 14_601, outputTokens: 0 },
+                        sessionId: CLAUDE_ROOT_SESSION,
+                      },
+                    },
+                  },
+                  {
+                    type: "emit_inbound",
+                    frame: {
+                      kind: "response",
+                      method: "session/prompt",
+                      result: { stopReason: "end_turn" },
+                    },
+                  },
+                ]),
+            claudeFrames.closeRequest,
+            claudeFrames.closed,
+          ],
+          undefined,
+          false,
+          "devin",
+        );
+        yield* session.runtime.startTurn(session.turnInput(1));
+        const terminal = yield* session.terminal;
+        assert.equal(terminal.status, "failed");
+        assert.deepEqual(terminal.failure, {
+          class: "usage_limit",
+          message: "Quota exhausted.",
+          code: "-32011",
+          retryable: route === "error" ? true : null,
+        });
+      }).pipe(Effect.provide(layerTest), Effect.scoped),
+  );
+
   it.effect("counts per-turn usage for a local glm command", () =>
     Effect.gen(function* () {
       const session = yield* openClaudeReplaySession(
