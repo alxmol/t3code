@@ -139,6 +139,11 @@ you name, so you can open the sub-agent's own conversation and follow its steps.
 tool still works when you ask for it by name: each Task gets a card with the task and its result.
 Droid does not share what a Task does in between, so that card opens to those two messages.
 
+Four of Droid's own commands work in a Droid thread: `/compact` summarizes the conversation in
+place, `/context` shows what fills the context window, `/cost` shows the tokens the session has
+used, and `/status` shows its model, settings and MCP servers. None of the last three uses the
+model. `/compact` waits until Droid's background work has finished.
+
 ## Checkpoints
 
 Checkpoint rollback restores your files as usual. ACP agents cannot rewind their own conversation,

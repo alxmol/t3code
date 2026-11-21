@@ -132,6 +132,67 @@ const specDecision = (optionId: string) => ({
   },
 });
 
+// Factory Droid 1.16.0's replies over its own protocol, trimmed.
+const SECOND_DROID_LOADED = {
+  session: { messages: [], title: "Store code word ZEBRA-41" },
+  settings: { modelId: "custom:haiku", reasoningEffort: "medium", autonomyMode: "auto-high" },
+  workingState: "idle",
+  cwd: "/private/tmp/droidproto/s1",
+  tokenUsage: {
+    inputTokens: 8,
+    outputTokens: 330,
+    cacheCreationTokens: 6411,
+    cacheReadTokens: 58929,
+    thinkingTokens: 132,
+    factoryCredits: 625,
+  },
+  inclusiveTokenUsage: {
+    inputTokens: 8,
+    outputTokens: 330,
+    cacheCreationTokens: 6411,
+    cacheReadTokens: 58929,
+    thinkingTokens: 132,
+    factoryCredits: 625,
+  },
+  lastCallTokenUsage: { inputTokens: 360, outputTokens: 4, cacheReadTokens: 21438 },
+};
+const SECOND_DROID_REPLIES: Record<string, unknown> = {
+  "droid.get_context_breakdown": {
+    modelId: "claude-haiku-5-5",
+    modelDisplayName: "Haiku 5.5",
+    contextBudget: 600_000,
+    usedTokens: 21_908,
+    freeTokens: 578_092,
+    categories: [{ name: "Messages", colorKey: "messages", tokens: 6_422 }],
+  },
+  "droid.list_mcp_servers": {
+    servers: [
+      { name: "context7", source: "user", status: "connected", serverType: "http" },
+      { name: "XcodeBuildMCP", source: "user", status: "connecting", serverType: "stdio" },
+    ],
+    summary: { total: 2, connected: 1, connecting: 1, failed: 0, disabled: 0 },
+  },
+  "droid.get_background_work": { backgroundWork: 0 },
+  "droid.compact_session": { newSessionId: "droid-session", removedCount: 8 },
+};
+/** Stands in for the second Droid process: answers each method with its recorded reply. */
+const secondDroid = (overrides: Record<string, unknown> = {}) => {
+  const requests: Array<readonly [string, unknown]> = [];
+  const ask: NonNullable<Parameters<typeof makeAcpRegistryAdapterV2>[0]["askDroidSession"]> = (
+    _sessionId,
+    use,
+  ) =>
+    use({
+      loaded: SECOND_DROID_LOADED,
+      request: (method, params) =>
+        Effect.sync(() => {
+          requests.push([method, params]);
+          return { ...SECOND_DROID_REPLIES, ...overrides }[method];
+        }),
+    });
+  return { ask, requests };
+};
+
 const openDroidTurn = Effect.fn("DroidAcpAdapterV2Test.openDroidTurn")(function* (input: {
   readonly scenario: string;
   readonly interactionMode: "default" | "plan";
@@ -141,7 +202,7 @@ const openDroidTurn = Effect.fn("DroidAcpAdapterV2Test.openDroidTurn")(function*
   readonly replayGate?: ReturnType<typeof makeProviderReplayGate>;
   readonly onContinuationOffered?: Effect.Effect<void>;
   readonly message?: { readonly messageText: string };
-  readonly readDroidContext?: Parameters<typeof makeAcpRegistryAdapterV2>[0]["readDroidContext"];
+  readonly askDroidSession?: Parameters<typeof makeAcpRegistryAdapterV2>[0]["askDroidSession"];
 }) {
   const fileSystem = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -176,7 +237,7 @@ const openDroidTurn = Effect.fn("DroidAcpAdapterV2Test.openDroidTurn")(function*
     ...(input.onContinuationOffered === undefined
       ? {}
       : { continuationRequests: { offer: () => input.onContinuationOffered! } }),
-    ...(input.readDroidContext === undefined ? {} : { readDroidContext: input.readDroidContext }),
+    ...(input.askDroidSession === undefined ? {} : { askDroidSession: input.askDroidSession }),
     makeRuntime: makeAcpReplayRuntime({
       transcript,
       statusPath: path.join(directory, "status.json"),
@@ -337,14 +398,7 @@ describe("Droid over ACP", () => {
         scenario: "context-command",
         interactionMode: "default",
         message: { messageText: "/context" },
-        readDroidContext: () =>
-          Effect.succeed({
-            modelDisplayName: "Haiku 5.5",
-            contextBudget: 600_000,
-            usedTokens: 21_908,
-            freeTokens: 578_092,
-            categories: [{ name: "Messages", tokens: 6_422 }],
-          }),
+        askDroidSession: secondDroid().ask,
         // No session/prompt: the replayed Droid rejects one it does not expect.
         entries: [],
       });
@@ -363,6 +417,108 @@ describe("Droid over ACP", () => {
       assert.include(reply, "| Messages | 6.4k | 1.1% |");
       const terminal = events.at(-1);
       assert.equal(terminal?.type === "turn.terminal" ? terminal.status : undefined, "completed");
+    }).pipe(Effect.provide(layerTest), Effect.scoped),
+  );
+
+  it.live("answers /cost and /status from Droid's own session without a model call", () =>
+    Effect.gen(function* () {
+      const { runtime, startTurn } = yield* openDroidTurn({
+        scenario: "cost-and-status",
+        interactionMode: "default",
+        message: { messageText: "/cost" },
+        askDroidSession: secondDroid().ask,
+        entries: [],
+      });
+      const reply = runtime.events.pipe(
+        Stream.takeUntil((event) => event.type === "turn.terminal"),
+        Stream.runCollect,
+        Effect.map((events) =>
+          events
+            .flatMap((event) =>
+              event.type === "turn_item.updated" && event.turnItem.type === "assistant_message"
+                ? [event.turnItem.text]
+                : [],
+            )
+            .at(-1),
+        ),
+      );
+      const cost = yield* reply;
+      assert.include(cost, "**Cost** · 65.7k tokens · 625 Factory credits");
+      assert.include(cost, "| Last model call | 360 | 4 | – | 21.4k | – | – |");
+      yield* startTurn(2, { messageText: "/status" });
+      const status = yield* reply;
+      assert.include(status, "| Model | Haiku 5.5 |");
+      assert.include(status, "| Autonomy level | Auto (High) |");
+      assert.include(status, "| Session | Store code word ZEBRA-41 · droid-session |");
+      assert.include(status, "| MCP servers | 2 in Droid's settings: context7, XcodeBuildMCP |");
+    }).pipe(Effect.provide(layerTest), Effect.scoped),
+  );
+
+  it.live("compacts in place through a second Droid, without a prompt", () =>
+    Effect.gen(function* () {
+      const droid = secondDroid();
+      const { runtime } = yield* openDroidTurn({
+        scenario: "compact-command",
+        interactionMode: "default",
+        message: { messageText: "/compact" },
+        askDroidSession: droid.ask,
+        entries: [],
+      });
+      const events = yield* runtime.events.pipe(
+        Stream.takeUntil((event) => event.type === "turn.terminal"),
+        Stream.runCollect,
+      );
+      assert.deepEqual(droid.requests, [
+        ["droid.get_background_work", { sessionId: "droid-session" }],
+        ["droid.get_context_breakdown", {}],
+        ["droid.compact_session", {}],
+        ["droid.get_context_breakdown", {}],
+      ]);
+      const compactions = events.flatMap((event) =>
+        event.type === "turn_item.updated" && event.turnItem.type === "compaction"
+          ? [event.turnItem.status]
+          : [],
+      );
+      assert.deepEqual([compactions[0], compactions.at(-1)], ["running", "completed"]);
+      // The meter shows Droid's figure for the compacted conversation, not the old one or none.
+      const usage = events
+        .flatMap((event) =>
+          event.type === "provider_thread.updated" ? [event.providerThread.contextUsage] : [],
+        )
+        .at(-1);
+      assert.deepEqual(usage, { usedTokens: 21_908, maxTokens: 600_000 });
+      const terminal = events.at(-1);
+      assert.equal(terminal?.type === "turn.terminal" ? terminal.status : undefined, "completed");
+    }).pipe(Effect.provide(layerTest), Effect.scoped),
+  );
+
+  it.live("does not compact while Droid runs background work", () =>
+    Effect.gen(function* () {
+      const droid = secondDroid({ "droid.get_background_work": { backgroundWork: 1 } });
+      const { runtime } = yield* openDroidTurn({
+        scenario: "compact-refused",
+        interactionMode: "default",
+        message: { messageText: "/compact" },
+        askDroidSession: droid.ask,
+        entries: [],
+      });
+      const events = yield* runtime.events.pipe(
+        Stream.takeUntil((event) => event.type === "turn.terminal"),
+        Stream.runCollect,
+      );
+      assert.deepEqual(
+        droid.requests.map(([method]) => method),
+        ["droid.get_background_work"],
+      );
+      const compaction = events
+        .flatMap((event) =>
+          event.type === "turn_item.updated" && event.turnItem.type === "compaction"
+            ? [event.turnItem]
+            : [],
+        )
+        .at(-1);
+      assert.equal(compaction?.status, "failed");
+      assert.include(compaction?.summary, "Droid is still running background work");
     }).pipe(Effect.provide(layerTest), Effect.scoped),
   );
   // Factory Droid 1.9.0 runs a Task in the background and may answer the prompt before it ends.

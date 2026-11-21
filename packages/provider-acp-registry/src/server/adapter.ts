@@ -26,11 +26,8 @@ import {
   isDroidPlanModeId,
   normalizeDroidToolCall,
 } from "./droidAcp.ts";
-import {
-  DROID_CONTEXT_COMMAND,
-  readDroidContextBreakdown,
-  withDroidContextCommand,
-} from "./droidContext.ts";
+import { droidCompactSession, withDroidCommands, withDroidSlashCommands } from "./droidCommands.ts";
+import { askDroidSession, type AskDroidSession } from "./droidSession.ts";
 import { makeKimiPromptOutcomeWatch } from "./kimiAcp.ts";
 import { extractOmpElicitationForm } from "./ompAcp.ts";
 import { extractOpenCodeElicitationForm } from "./opencodeAcp.ts";
@@ -109,7 +106,7 @@ export interface AcpRegistryAdapterV2Options {
   >;
   readonly continuationRequests?: Parameters<typeof makeAcpAdapterV2>[0]["continuationRequests"];
   readonly assertComplete?: Effect.Effect<void, EffectAcpErrors.AcpError>;
-  readonly readDroidContext?: Parameters<typeof withDroidContextCommand>[1];
+  readonly askDroidSession?: AskDroidSession;
 }
 
 // Mistral Vibe's application rate-limit code, outside ACP.
@@ -205,7 +202,7 @@ function makeAcpRegistryRuntime(
     });
 }
 
-function makeDroidContextRuntime(
+function makeDroidRuntime(
   options: AcpRegistryAdapterV2Options,
   catalog: AcpRegistrySupport.AcpRegistryCatalog["Service"],
   makeRuntime: ReturnType<typeof makeAcpRegistryRuntime>,
@@ -214,10 +211,10 @@ function makeDroidContextRuntime(
     Effect.gen(function* () {
       const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
       const runtime = yield* makeRuntime(input);
-      return withDroidContextCommand(
+      return withDroidCommands(
         runtime,
-        options.readDroidContext ??
-          ((sessionId) =>
+        options.askDroidSession ??
+          ((sessionId, use, askOptions) =>
             catalog.resolve(options.settings, input.cwd, options.environment).pipe(
               Effect.mapError(
                 (cause) =>
@@ -227,12 +224,16 @@ function makeDroidContextRuntime(
                   }),
               ),
               Effect.flatMap((resolved) =>
-                readDroidContextBreakdown({
-                  command: resolved.spawn.command,
-                  env: { ...resolved.spawn.env, ...input.processEnvironment },
-                  cwd: input.cwd,
-                  sessionId,
-                }),
+                askDroidSession(
+                  {
+                    command: resolved.spawn.command,
+                    env: { ...resolved.spawn.env, ...input.processEnvironment },
+                    cwd: input.cwd,
+                    sessionId,
+                  },
+                  use,
+                  askOptions,
+                ),
               ),
               Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
               Effect.scoped,
@@ -367,6 +368,9 @@ export const makeAcpRegistryAdapterV2 = Effect.fn("makeAcpRegistryAdapterV2")(fu
     ...(isDroid
       ? {
           runtimeHarness: "Droid",
+          // Droid advertises no `compact` command and answers a `/compact` prompt as chat.
+          compactViaAdvertisedCommand: false,
+          compactSession: droidCompactSession,
           ignoreSessionUpdate: isDroidEmptyUsageUpdate,
           promptFailure: droidPromptFailure,
           extractElicitationForm: extractDroidElicitationForm,
@@ -448,7 +452,7 @@ export const makeAcpRegistryAdapterV2 = Effect.fn("makeAcpRegistryAdapterV2")(fu
         }),
     mcpOverHttp: useHttpMcpServers,
     makeRuntime: isDroid
-      ? makeDroidContextRuntime(options, catalog, makeRuntime)
+      ? makeDroidRuntime(options, catalog, makeRuntime)
       : isDevin
         ? makeDevinRuntime(options, catalog, makeRuntime, pty)
         : makeRuntime,
@@ -460,7 +464,7 @@ export const makeAcpRegistryAdapterV2 = Effect.fn("makeAcpRegistryAdapterV2")(fu
               options.instanceId,
               normalizeAcpRegistryCommands(
                 isDroid
-                  ? [...commands, DROID_CONTEXT_COMMAND]
+                  ? withDroidSlashCommands(commands)
                   : isDevin
                     ? [...commands, DEVIN_USAGE_COMMAND]
                     : commands,

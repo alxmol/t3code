@@ -66,7 +66,7 @@ import {
 import * as AcpRegistrySupport from "./AcpRegistrySupport.ts";
 import * as AcpRegistryRuntimeCoordinator from "./AcpRegistryRuntimeCoordinator.ts";
 import { droidUsageLimits, isDroidAgent } from "./droidAcp.ts";
-import { DROID_CONTEXT_COMMAND } from "./droidContext.ts";
+import { withDroidSlashCommands } from "./droidCommands.ts";
 import * as AcpRegistryAuth from "./auth.ts";
 import * as AcpRegistryAuthenticationState from "./authenticationState.ts";
 import { readDevinAccount } from "./devinAccount.ts";
@@ -146,14 +146,15 @@ export function updateAcpRegistryEnrichmentCache(input: {
 }
 const EMPTY_CAPABILITIES = createModelCapabilities({ optionDescriptors: [] });
 // Neither agent advertises these commands over ACP; T3 answers them itself.
-const probeWithCommand =
-  (command: ServerProviderSlashCommand): typeof probeAcpRegistryConfiguration =>
+const probeWithCommands =
+  (
+    add: (
+      commands: ReadonlyArray<ServerProviderSlashCommand>,
+    ) => ReadonlyArray<ServerProviderSlashCommand>,
+  ): typeof probeAcpRegistryConfiguration =>
   (input) =>
     probeAcpRegistryConfiguration(input).pipe(
-      Effect.map((result) => ({
-        ...result,
-        slashCommands: [...result.slashCommands, command],
-      })),
+      Effect.map((result) => ({ ...result, slashCommands: add(result.slashCommands) })),
     );
 
 const isDevinAgent = (settings: Pick<AcpRegistrySettings, "source" | "agentId" | "commandPath">) =>
@@ -878,9 +879,9 @@ export const AcpRegistryDriver: ProviderDriver<AcpRegistrySettings, AcpRegistryD
         cwd: host.paths.cwd,
       },
       isDroidAgent(effectiveConfig)
-        ? probeWithCommand(DROID_CONTEXT_COMMAND)
+        ? probeWithCommands(withDroidSlashCommands)
         : isDevinAgent(effectiveConfig)
-          ? probeWithCommand(DEVIN_USAGE_COMMAND)
+          ? probeWithCommands((commands) => [...commands, DEVIN_USAGE_COMMAND])
           : probeAcpRegistryConfiguration,
     ).pipe(
       Effect.provideService(AcpRegistrySupport.AcpRegistryCatalog, catalog),
