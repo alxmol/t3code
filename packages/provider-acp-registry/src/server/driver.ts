@@ -8,9 +8,11 @@ import {
   type CustomModelSetting,
   type ServerProvider,
   type ServerProviderModel,
+  type ServerProviderSlashCommand,
 } from "@t3tools/contracts";
 import { AcpRegistrySettings } from "../settings.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
+import * as PtyAdapter from "@t3tools/shared/PtyAdapter";
 import { createModelCapabilities } from "@t3tools/shared/model";
 import * as Clock from "effect/Clock";
 import * as Digest from "effect/crypto/Digest";
@@ -19,7 +21,6 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Equal from "effect/Equal";
 import * as FileSystem from "effect/FileSystem";
-import * as HttpClient from "effect/http/HttpClient";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Ref from "effect/Ref";
@@ -66,12 +67,18 @@ import * as AcpRegistrySupport from "./AcpRegistrySupport.ts";
 import * as AcpRegistryRuntimeCoordinator from "./AcpRegistryRuntimeCoordinator.ts";
 import { isDroidAgent } from "./droidAcp.ts";
 import { DROID_CONTEXT_COMMAND } from "./droidContext.ts";
-import { readDroidSubscriptionUsageLimits } from "./droidUsageLimits.ts";
 import * as AcpRegistryAuth from "./auth.ts";
 import * as AcpRegistryAuthenticationState from "./authenticationState.ts";
 import { readDevinAccount } from "./devinAccount.ts";
+import {
+  DEVIN_USAGE_COMMAND,
+  devinUsageLimits,
+  readDevinUsage,
+  type DevinUsage,
+} from "./devinUsage.ts";
 
 const DRIVER_KIND = ProviderDriverKind.make("acpRegistry");
+const DEVIN_USAGE_TTL_MS = 15 * 60_000;
 const decodeSettings = Schema.decodeSync(AcpRegistrySettings);
 // Cache only successful authenticated probes so sign-in changes remain visible.
 const PROBE_SUCCESS_TTL_MS = 15 * 60 * 1_000;
@@ -138,14 +145,16 @@ export function updateAcpRegistryEnrichmentCache(input: {
   };
 }
 const EMPTY_CAPABILITIES = createModelCapabilities({ optionDescriptors: [] });
-// Droid advertises none of its built-in commands over ACP; T3 answers this one itself.
-const probeDroidConfiguration: typeof probeAcpRegistryConfiguration = (input) =>
-  probeAcpRegistryConfiguration(input).pipe(
-    Effect.map((result) => ({
-      ...result,
-      slashCommands: [...result.slashCommands, DROID_CONTEXT_COMMAND],
-    })),
-  );
+// Neither agent advertises these commands over ACP; T3 answers them itself.
+const probeWithCommand =
+  (command: ServerProviderSlashCommand): typeof probeAcpRegistryConfiguration =>
+  (input) =>
+    probeAcpRegistryConfiguration(input).pipe(
+      Effect.map((result) => ({
+        ...result,
+        slashCommands: [...result.slashCommands, command],
+      })),
+    );
 
 const isDevinAgent = (settings: Pick<AcpRegistrySettings, "source" | "agentId" | "commandPath">) =>
   settings.source === "local"
@@ -748,24 +757,67 @@ export const AcpRegistryDriver: ProviderDriver<AcpRegistrySettings, AcpRegistryD
         return [next, next.models === provider.models ? learned : next.models];
       });
     const clearLearnedModels = Ref.set(learnedModels, []);
+    // Devin shows an account's quota only in its terminal app, which takes seconds to open: the
+    // snapshot carries the last reading and a stale one is read again in the background.
+    const pty = yield* Effect.serviceOption(PtyAdapter.PtyAdapter);
+    const devinUsage = yield* Ref.make<{
+      readonly readAt: number;
+      readonly usage: DevinUsage | undefined;
+    } | null>(null);
+    const devinUsageReading = yield* Ref.make(false);
+    let refreshSnapshot: Effect.Effect<void> = Effect.void;
+    const withDevinUsage = Effect.fn("AcpRegistryDriver.withDevinUsage")(function* (
+      provider: ServerProvider,
+      devin: Omit<Parameters<typeof readDevinUsage>[0], "pty">,
+    ) {
+      if (provider.auth.status !== "authenticated" || Option.isNone(pty)) return provider;
+      const now = yield* Clock.currentTimeMillis;
+      const cached = yield* Ref.get(devinUsage);
+      if (
+        (cached === null || now - cached.readAt > DEVIN_USAGE_TTL_MS) &&
+        !(yield* Ref.getAndSet(devinUsageReading, true))
+      ) {
+        yield* readDevinUsage({ ...devin, pty: pty.value }).pipe(
+          Effect.flatMap((usage) =>
+            Clock.currentTimeMillis.pipe(
+              Effect.flatMap((readAt) => Ref.set(devinUsage, { readAt, usage })),
+            ),
+          ),
+          Effect.ensuring(Ref.set(devinUsageReading, false)),
+          Effect.andThen(Effect.suspend(() => refreshSnapshot)),
+          Effect.forkDetach,
+        );
+      }
+      const usageLimits = cached?.usage && devinUsageLimits(cached.usage, cached.readAt);
+      if (!usageLimits) return provider;
+      const plan = cached?.usage?.plan;
+      return {
+        ...provider,
+        usageLimits,
+        auth: { ...provider.auth, ...(plan ? { label: plan } : {}) },
+      };
+    });
     // Devin names an instance's account only through its CLI, run with that instance's environment.
     const withDevinAccount = (provider: ServerProvider) =>
       !isDevinAgent(effectiveConfig) || !provider.enabled || !provider.installed
         ? Effect.succeed(provider)
         : catalog.resolve(effectiveConfig, host.paths.cwd, processEnvironment).pipe(
-            Effect.flatMap((resolved) =>
-              readDevinAccount({
+            Effect.flatMap((resolved) => {
+              const devin = {
                 command: resolved.spawn.command,
                 env: { ...resolved.spawn.env, ...processEnvironment },
-              }),
-            ),
+              };
+              return readDevinAccount(devin).pipe(
+                Effect.map((account) =>
+                  account === undefined
+                    ? provider
+                    : { ...provider, auth: { ...provider.auth, ...account } },
+                ),
+                Effect.flatMap((signedIn) => withDevinUsage(signedIn, devin)),
+              );
+            }),
             Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
             Effect.scoped,
-            Effect.map((account) =>
-              account === undefined
-                ? provider
-                : { ...provider, auth: { ...provider.auth, ...account } },
-            ),
             Effect.orElseSucceed(() => provider),
           );
     const withLiveRuntimeState = Effect.fn("AcpRegistryDriver.withLiveRuntimeState")(function* (
@@ -816,31 +868,17 @@ export const AcpRegistryDriver: ProviderDriver<AcpRegistrySettings, AcpRegistryD
       ),
       Effect.flatMap(withLiveRuntimeState),
     );
-    const httpClient = yield* Effect.serviceOption(HttpClient.HttpClient);
-    // Kept out of the initial snapshot, which must not wait on Droid's local bridge.
-    const checkProvider =
-      isDroidAgent(effectiveConfig) && Option.isSome(httpClient)
-        ? checkReadiness.pipe(
-            Effect.filterOrElse(
-              (provider) => !(provider.enabled && provider.installed),
-              (provider) =>
-                readDroidSubscriptionUsageLimits(processEnvironment).pipe(
-                  Effect.provideService(FileSystem.FileSystem, fileSystem),
-                  Effect.provideService(Path.Path, path),
-                  Effect.provideService(HttpClient.HttpClient, httpClient.value),
-                  Effect.map((usageLimits) =>
-                    usageLimits === undefined ? provider : { ...provider, usageLimits },
-                  ),
-                ),
-            ),
-          )
-        : checkReadiness;
+    const checkProvider = checkReadiness;
     const enrichProvider = checkAcpRegistryProviderStatus(
       {
         ...readinessInput,
         cwd: host.paths.cwd,
       },
-      isDroidAgent(effectiveConfig) ? probeDroidConfiguration : probeAcpRegistryConfiguration,
+      isDroidAgent(effectiveConfig)
+        ? probeWithCommand(DROID_CONTEXT_COMMAND)
+        : isDevinAgent(effectiveConfig)
+          ? probeWithCommand(DEVIN_USAGE_COMMAND)
+          : probeAcpRegistryConfiguration,
     ).pipe(
       Effect.provideService(AcpRegistrySupport.AcpRegistryCatalog, catalog),
       Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
@@ -1039,6 +1077,7 @@ export const AcpRegistryDriver: ProviderDriver<AcpRegistrySettings, AcpRegistryD
         : provided;
     };
 
+    refreshSnapshot = snapshot.refresh.pipe(Effect.ignore);
     const clearLiveState = (
       Option.isSome(runtimeCoordinator)
         ? runtimeCoordinator.value

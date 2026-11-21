@@ -10,6 +10,8 @@ import {
   devinAnswerablePermissionOptions,
 } from "./devinAcp.ts";
 import { withDevinToolRows } from "./devinToolRows.ts";
+import { DEVIN_USAGE_COMMAND, readDevinUsage, withDevinUsageCommand } from "./devinUsage.ts";
+import * as PtyAdapter from "@t3tools/shared/PtyAdapter";
 import {
   DROID_ORCHESTRATION_INSTRUCTIONS,
   droidLeftSpec,
@@ -240,10 +242,40 @@ const isHermes = (
   initializeResult: AcpSessionRuntime.AcpSessionRuntimeStartResult["initializeResult"],
 ) => initializeResult.agentInfo?.name === "hermes-agent";
 
+function makeDevinRuntime(
+  options: AcpRegistryAdapterV2Options,
+  catalog: AcpRegistrySupport.AcpRegistryCatalog["Service"],
+  makeRuntime: ReturnType<typeof makeAcpRegistryRuntime>,
+  pty: Option.Option<PtyAdapter.PtyAdapter["Service"]>,
+): ReturnType<typeof makeAcpRegistryRuntime> {
+  return (input) =>
+    makeRuntime(input).pipe(
+      Effect.map((runtime) =>
+        withDevinUsageCommand(
+          withDevinToolRows(runtime),
+          Option.isNone(pty)
+            ? Effect.undefined
+            : catalog.resolve(options.settings, input.cwd, options.environment).pipe(
+                Effect.flatMap((resolved) =>
+                  readDevinUsage({
+                    pty: pty.value,
+                    command: resolved.spawn.command,
+                    env: { ...resolved.spawn.env, ...input.processEnvironment },
+                  }),
+                ),
+                Effect.scoped,
+                Effect.orElseSucceed(() => undefined),
+              ),
+        ),
+      ),
+    );
+}
+
 export const makeAcpRegistryAdapterV2 = Effect.fn("makeAcpRegistryAdapterV2")(function* (
   options: AcpRegistryAdapterV2Options,
 ) {
   const catalog = yield* AcpRegistrySupport.AcpRegistryCatalog;
+  const pty = yield* Effect.serviceOption(PtyAdapter.PtyAdapter);
   const runtimeCoordinator = Option.getOrUndefined(
     yield* Effect.serviceOption(AcpRegistryRuntimeCoordinator.AcpRegistryRuntimeCoordinator),
   );
@@ -414,7 +446,7 @@ export const makeAcpRegistryAdapterV2 = Effect.fn("makeAcpRegistryAdapterV2")(fu
     makeRuntime: isDroid
       ? makeDroidContextRuntime(options, catalog, makeRuntime)
       : isDevin
-        ? (input) => makeRuntime(input).pipe(Effect.map(withDevinToolRows))
+        ? makeDevinRuntime(options, catalog, makeRuntime, pty)
         : makeRuntime,
     ...(runtimeCoordinator === undefined
       ? {}
@@ -423,7 +455,11 @@ export const makeAcpRegistryAdapterV2 = Effect.fn("makeAcpRegistryAdapterV2")(fu
             runtimeCoordinator.publishAvailableCommands(
               options.instanceId,
               normalizeAcpRegistryCommands(
-                isDroid ? [...commands, DROID_CONTEXT_COMMAND] : commands,
+                isDroid
+                  ? [...commands, DROID_CONTEXT_COMMAND]
+                  : isDevin
+                    ? [...commands, DEVIN_USAGE_COMMAND]
+                    : commands,
               ),
             ),
           // A new Copilot session starts at its own effort, not the one the composer shows.

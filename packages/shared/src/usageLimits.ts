@@ -59,11 +59,6 @@ export function exhaustedUsageWindow(
         );
       });
     }
-    case "acpRegistry":
-      // Droid's Claude subscription windows limit only the models its local bridge serves.
-      return exhausted.find(
-        (window) => !window.id.startsWith("claude_") || model.startsWith("custom:Claude-Code-"),
-      );
     case "codex": {
       // Seat-based plans spend credits only past their plan windows, so the credit cap blocks only plans without them.
       const hasPlanWindows = windows.some(

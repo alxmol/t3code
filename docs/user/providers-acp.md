@@ -139,10 +139,6 @@ you name, so you can open the sub-agent's own conversation and follow its steps.
 tool still works when you ask for it by name: each Task gets a card with the task and its result.
 Droid does not share what a Task does in between, so that card opens to those two messages.
 
-Models that Droid runs through a local Claude subscription bridge report that subscription's
-limits. They appear on the Usage page as **Claude Session** and **Claude Weekly** and apply only to
-those models; Droid's other models are not held back when they run out.
-
 ## Checkpoints
 
 Checkpoint rollback restores your files as usual. ACP agents cannot rewind their own conversation,

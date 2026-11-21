@@ -180,15 +180,6 @@ describe("new thread model fallback", () => {
       ["opencode", "console-custom"],
     ],
     ["opencode", ["budget_all"], "opencode/model", false, undefined, []],
-    ["acpRegistry", ["claude_seven_day"], "claude-opus-5-5", false, undefined, undefined],
-    [
-      "acpRegistry",
-      ["claude_seven_day"],
-      "custom:Claude-Code-·-Opus-5.5-(claude-opus-5-5)-0",
-      true,
-      undefined,
-      undefined,
-    ],
   ] as const)(
     "matches %s pools %s to %s",
     (driver, ids, model, usesFallback, modelIds, providerIds) => {
