@@ -119,7 +119,7 @@ setting removes it from `settings.json`.
 
 **Usage → Limits** pools every subscription account it can see per provider, so with several Codex
 or Claude accounts across your enabled environments and hubs you read one number per window rather than a
-list. Each window card shows how much of the pool is left and a bar with one segment per account,
+list. Each ACP Registry agent is its own provider here, under its own name. Each window card shows how much of the pool is left and a bar with one segment per account,
 kept in the same column across windows. Accounts are ordered by their next 5-hour refill, soonest
 first. For an account with no weekly quota left, this is when its session becomes usable again.
 The first available window is used when no account reports a 5-hour limit. A gap means the
@@ -148,7 +148,8 @@ If a window still looks stale, refresh Limits to re-check every provider and hub
 Pick `/usage-limits` from the composer's command menu, or send it as a message, to check the
 current model's limits without leaving the conversation. The result opens above the composer and
 closes when you dismiss it or send your next message. It uses the same snapshot as **Usage → Limits**, so it does not run the agent or refresh
-anything. The command is offered only for providers that appear under **Usage → Limits**.
+anything. The command is offered only for providers that appear under **Usage → Limits**, and it
+lists the accounts of the provider the thread runs on.
 
 To keep them in view on web and desktop, turn on **Usage limits** in **Settings → Appearance → Thread details**, or right-click the thread details card.
 The bottom of the thread details card then shows how much is left in each limit window of the

@@ -41,6 +41,14 @@ export function resolveOfficialAcpRegistryIconUrl(icon: string | null | undefine
   }
 }
 
+/** The Registry agent an official icon URL belongs to; clients see the icon, not the agent id. */
+export function acpRegistryAgentIdFromIconUrl(icon: string | null | undefined): string | null {
+  const id = resolveOfficialAcpRegistryIconUrl(icon)?.match(
+    /^https:\/\/[^/]+\/registry\/v1\/latest\/([^/]+)\.svg$/,
+  )?.[1];
+  return id !== undefined && ACP_REGISTRY_AGENT_ID_PATTERN.test(id) ? id : null;
+}
+
 export const AcpRegistryDistribution = Schema.Literals(["binary", "npx", "uvx"]);
 export type AcpRegistryDistribution = typeof AcpRegistryDistribution.Type;
 

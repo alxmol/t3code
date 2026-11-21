@@ -85,6 +85,7 @@ function AccountAvatar({
     return (
       <ProviderInstanceIcon
         driverKind={account.driver}
+        acpRegistryIconUrl={account.iconUrl}
         displayName={
           account.displayName ??
           providerClients.get(account.driver)?.label ??
@@ -638,7 +639,7 @@ function PoolWindowCard({
 
 function PoolSection({ pool, now }: { readonly pool: LimitPool; readonly now: number }) {
   const color = barColor(pool.driver);
-  const label = providerClients.get(pool.driver)?.label ?? String(pool.driver);
+  const label = pool.label ?? providerClients.get(pool.driver)?.label ?? String(pool.driver);
   const windows = displayLimitWindows(pool);
   const m = useMessages();
   return (
@@ -646,6 +647,7 @@ function PoolSection({ pool, now }: { readonly pool: LimitPool; readonly now: nu
       <h2 className="flex items-center gap-2 text-sm font-medium text-foreground">
         <ProviderInstanceIcon
           driverKind={pool.driver}
+          acpRegistryIconUrl={pool.iconUrl}
           displayName={label}
           indicatorBackground="var(--background)"
           className="size-5"
@@ -694,7 +696,7 @@ export function UsageLimitsPooled({
       ) : null}
       <SegmentPopoverContext value={segmentPopover}>
         {pools.map((pool) => (
-          <Fragment key={pool.driver}>
+          <Fragment key={pool.key}>
             <PoolSection pool={pool} now={now} />
           </Fragment>
         ))}

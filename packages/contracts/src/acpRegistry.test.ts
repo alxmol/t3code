@@ -4,6 +4,7 @@ import * as Schema from "effect/Schema";
 import {
   AcpRegistryManagedBinaryUninstallInput,
   AcpRegistryManagedBinaryUninstallResult,
+  acpRegistryAgentIdFromIconUrl,
   officialAcpRegistryIconUrlForAgentId,
   resolveOfficialAcpRegistryIconUrl,
 } from "./acpRegistry.ts";
@@ -32,6 +33,20 @@ describe("ACP Registry contracts", () => {
         "https://user@cdn.agentclientprotocol.com/registry/v1/latest/pi-acp.svg",
       ),
     ).toBeNull();
+    expect(
+      acpRegistryAgentIdFromIconUrl(
+        "https://cdn.agentclientprotocol.com/registry/v1/latest/factory-droid.svg",
+      ),
+    ).toBe("factory-droid");
+    for (const icon of [
+      "https://cdn.agentclientprotocol.com.evil/registry/v1/latest/devin.svg",
+      "https://cdn.agentclientprotocol.com/registry/v1/latest/Devin.svg",
+      "https://cdn.agentclientprotocol.com/registry/v1/latest/a/devin.svg",
+      "https://cdn.agentclientprotocol.com/other/devin.svg",
+      undefined,
+    ]) {
+      expect(acpRegistryAgentIdFromIconUrl(icon)).toBeNull();
+    }
   });
 
   it("decodes managed binary uninstall payloads and rejects unsafe agent IDs", () => {

@@ -1018,6 +1018,86 @@ describe("pools", () => {
     ).toContainEqual(["pro@example.com", 95]);
   });
 
+  it("pools ACP Registry accounts per agent, named and drawn as the agent", () => {
+    const registry = ProviderDriverKind.make("acpRegistry");
+    const devinIcon = "https://cdn.agentclientprotocol.com/registry/v1/latest/devin.svg";
+    const droidIcon = "https://cdn.agentclientprotocol.com/registry/v1/latest/factory-droid.svg";
+    const devinWeekly = { ...weekly, id: "devin_weekly", label: "Devin Weekly" };
+    const agent = (id: string, iconUrl: string | undefined, email: string, usedPercent: number) =>
+      provider({
+        driver: registry,
+        instanceId: ProviderInstanceId.make(id),
+        displayName: id,
+        ...(iconUrl ? { iconUrl } : {}),
+        auth: { status: "authenticated", email },
+        usageLimits: { checkedAt, windows: [{ ...devinWeekly, usedPercent }] },
+      });
+    const accounts = collectLimitAccounts(
+      new Map([
+        [
+          EnvironmentId.make("env-a"),
+          {
+            ...laptop,
+            serverConfig: {
+              providers: [
+                agent("devin-1", devinIcon, "a@example.com", 10),
+                agent("devin-2", devinIcon, "b@example.com", 20),
+                agent("devin-3", devinIcon, "c@example.com", 60),
+                // One login on two agents is two accounts.
+                agent("droid", droidIcon, "a@example.com", 50),
+                agent("local-a", undefined, "a@example.com", 0),
+                agent("local-b", undefined, "d@example.com", 0),
+              ],
+            },
+          },
+        ],
+      ]),
+    );
+    expect(
+      collectLimitPools(accounts, now).map((pool) => ({
+        key: pool.key,
+        driver: pool.driver,
+        label: pool.label,
+        iconUrl: pool.iconUrl,
+        accounts: pool.accounts.map((account) => account.displayName),
+        remaining: pool.windows.map((window) => window.remainingPercent),
+      })),
+    ).toEqual([
+      {
+        key: "acpRegistry:devin",
+        driver: registry,
+        label: "Devin",
+        iconUrl: devinIcon,
+        accounts: ["devin-1", "devin-2", "devin-3"],
+        remaining: [70],
+      },
+      {
+        key: "acpRegistry:factory-droid",
+        driver: registry,
+        label: "Factory Droid",
+        iconUrl: droidIcon,
+        accounts: ["droid"],
+        remaining: [50],
+      },
+      {
+        key: "acpRegistry:instance:env-a:local-a",
+        driver: registry,
+        label: "local-a",
+        iconUrl: undefined,
+        accounts: ["local-a"],
+        remaining: [100],
+      },
+      {
+        key: "acpRegistry:instance:env-a:local-b",
+        driver: registry,
+        label: "local-b",
+        iconUrl: undefined,
+        accounts: ["local-b"],
+        remaining: [100],
+      },
+    ]);
+  });
+
   it("pools windows by id across accounts and orders resets by when they land", () => {
     const input = new Map([
       [
@@ -1553,6 +1633,39 @@ describe("/usage-limits", () => {
       plan: "Codex OSS",
     });
     expect(report?.notices).toEqual([]);
+  });
+
+  it("scopes an ACP Registry agent to its own accounts and command", () => {
+    const registry = ProviderDriverKind.make("acpRegistry");
+    const agent = (id: string, agentId: string, overrides: Partial<ServerProvider> = {}) =>
+      provider({
+        driver: registry,
+        instanceId: ProviderInstanceId.make(id),
+        iconUrl: `https://cdn.agentclientprotocol.com/registry/v1/latest/${agentId}.svg`,
+        ...overrides,
+      });
+    const devin = ["devin-1", "devin-2", "devin-3"].map((id) =>
+      agent(id, "devin", { usageLimits: limits }),
+    );
+    const droid = agent("droid", "factory-droid");
+    const linked = agent("linked", "other-agent", {
+      usageLimits: {
+        checkedAt: limits.checkedAt,
+        windows: [],
+        externalUsage: { label: "Usage", url: "https://example.com/usage" },
+      },
+    });
+    const providers = [...devin, droid, linked];
+    const listed = (instanceId: ProviderInstanceId) =>
+      collectProviderUsageLimits(instanceId, providers, [], now)?.accounts.map(
+        (account) => account.id,
+      );
+    expect(listed(devin[1]!.instanceId)).toEqual(["devin-1", "devin-2", "devin-3"]);
+    expect(listed(droid.instanceId)).toBeUndefined();
+    expect(listed(linked.instanceId)).toEqual(["linked"]);
+    expect(
+      withUsageLimitsCommands(providers, []).map((entry) => entry.slashCommands.length),
+    ).toEqual([1, 1, 1, 0, 1]);
   });
 
   it("keeps the freshest usable native duplicate and the freshest native credits in either order", () => {
