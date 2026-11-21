@@ -4692,6 +4692,7 @@
   "df86826bcb3eb1c3": "Reanudar ahora",
   "f89ef34bbf5911ee": "Reanudar al restablecerse",
   "51a1a709a4972f7e": "Posponer hasta que se restablezca",
+  "4aa079c01caa4cc3": "Continuar en {name} (queda {percent} %)",
   "e2dd1df33d37f171": "Se alcanzó el límite de uso de ChatGPT",
   "015b7a8efd63a101": "El proyecto seleccionado no está disponible. Vuelve a conectarte e inténtalo de nuevo.",
   "3a0eca38b1656950": "El servidor no indicó si este proyecto está en la raíz del repositorio, así que no se puede reutilizar este worktree de forma segura. Actualiza el servidor o elige otra rama.",

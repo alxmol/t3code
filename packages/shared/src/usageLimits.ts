@@ -115,6 +115,72 @@ export function resolveNewThreadModelSelection(input: {
   };
 }
 
+export interface UsageLimitContinuation {
+  readonly provider: ServerProvider;
+  readonly model: string;
+  readonly remainingPercent: number;
+}
+
+/**
+ * Another account of the same provider that can take over a usage-limited thread: the one with
+ * the most quota left. An account with no current reading is never offered, since the offer
+ * states how much is left. The user picks it; nothing switches on its own.
+ */
+export function usageLimitContinuation(input: {
+  readonly providers: readonly ServerProvider[];
+  readonly instanceId: ProviderInstanceId;
+  readonly model: string;
+  readonly now: number;
+  readonly settings?:
+    | Pick<ServerSettings, "providerInstances" | "projectSettingsOverrides">
+    | undefined;
+  readonly projectId?: ProjectId | null | undefined;
+}): UsageLimitContinuation | null {
+  const limited = input.providers.find((provider) => provider.instanceId === input.instanceId);
+  if (!limited) return null;
+  const group = usageLimitGroup(limited);
+  const email = (provider: ServerProvider) => provider.auth.email?.trim().toLowerCase();
+  let best: UsageLimitContinuation | null = null;
+  for (const provider of input.providers) {
+    if (
+      provider.instanceId === limited.instanceId ||
+      usageLimitGroup(provider) !== group ||
+      !provider.enabled ||
+      !provider.installed ||
+      provider.auth.status !== "authenticated" ||
+      !isProviderAvailable(provider) ||
+      // A second instance on the same login shares the spent quota.
+      (email(limited) !== undefined && email(provider) === email(limited)) ||
+      (input.settings &&
+        !resolveProjectProviderInstanceEnabled(
+          input.settings,
+          input.projectId ?? null,
+          provider.instanceId,
+        ))
+    ) {
+      continue;
+    }
+    const model =
+      provider.models.find((candidate) => candidate.slug === input.model) ??
+      provider.models.find((candidate) => candidate.isDefault && !candidate.isCustom) ??
+      provider.models.find((candidate) => !candidate.isCustom) ??
+      provider.models[0];
+    if (!model || exhaustedUsageWindow(provider, input.now, model.slug)) continue;
+    // A window past its reset was read before the reset, so it says nothing about now.
+    const windows = (provider.usageLimits?.windows ?? []).filter(
+      (window) =>
+        (window.modelIds === undefined || window.modelIds.includes(model.slug)) &&
+        (resetMillis(window) ?? Number.POSITIVE_INFINITY) > input.now,
+    );
+    if (windows.length === 0) continue;
+    const left = Math.min(...windows.map(remainingPercent));
+    if (left > 0 && (best === null || left > best.remainingPercent)) {
+      best = { provider, model: model.slug, remainingPercent: left };
+    }
+  }
+  return best;
+}
+
 export const CHATGPT_USAGE_URL = "https://chatgpt.com/#settings/Usage";
 export const CHATGPT_USAGE_LIMIT_CODE = "subscription_sharing_usage_limit_exceeded";
 /** A ChatGPT Business admin caps plan use in other apps; only the admin can raise it. */

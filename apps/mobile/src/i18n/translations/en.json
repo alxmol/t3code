@@ -4700,6 +4700,7 @@
   "df86826bcb3eb1c3": "Resume now",
   "f89ef34bbf5911ee": "Resume at reset",
   "51a1a709a4972f7e": "Snooze until reset",
+  "4aa079c01caa4cc3": "Continue on {name} ({percent}% left)",
   "e2dd1df33d37f171": "ChatGPT usage limit reached",
   "015b7a8efd63a101": "The selected project is unavailable. Reconnect and try again.",
   "3a0eca38b1656950": "The server did not report whether this project is at the repository root, so this worktree cannot be reused safely. Update the server or choose another branch.",

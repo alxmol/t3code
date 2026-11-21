@@ -149,7 +149,8 @@ Pick `/usage-limits` from the composer's command menu, or send it as a message, 
 current model's limits without leaving the conversation. The result opens above the composer and
 closes when you dismiss it or send your next message. It uses the same snapshot as **Usage → Limits**, so it does not run the agent or refresh
 anything. The command is offered only for providers that appear under **Usage → Limits**, and it
-lists the accounts of the provider the thread runs on.
+lists the accounts of the provider the thread runs on. When a thread stops on a limit, it can
+[continue on another account](./thread-sidebar.md) that has quota left.
 
 To keep them in view on web and desktop, turn on **Usage limits** in **Settings → Appearance → Thread details**, or right-click the thread details card.
 The bottom of the thread details card then shows how much is left in each limit window of the

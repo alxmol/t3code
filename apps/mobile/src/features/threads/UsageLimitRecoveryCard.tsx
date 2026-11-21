@@ -25,9 +25,15 @@ import { useAtomCommand } from "../../state/use-atom-command";
 export function UsageLimitRecoveryCard({
   thread,
   environmentId,
+  continuation,
 }: {
   thread: EnvironmentThreadShell;
   environmentId: EnvironmentId;
+  continuation?: {
+    readonly name: string;
+    readonly remainingPercent: number;
+    readonly onContinue: () => void;
+  } | null;
 }) {
   const gt = useGT();
   const updateMetadata = useAtomCommand(threadEnvironment.updateMetadata);
@@ -185,7 +191,7 @@ export function UsageLimitRecoveryCard({
                     "Usage limit reached. The provider did not report a reset time. Retry manually when your limit is available.",
                   )}
         </Text>
-        {chatGptLimit || canSchedule ? (
+        {chatGptLimit || canSchedule || continuation ? (
           // The margins cancel the 44pt touch height so the links sit 8pt under the text.
           <View className="-mb-3 -mt-2 flex-row flex-wrap gap-x-4">
             {chatGptLimit ? (
@@ -215,6 +221,16 @@ export function UsageLimitRecoveryCard({
                   onPress={() => void toggle("snooze")}
                 />
               </>
+            ) : null}
+            {continuation ? (
+              <RecoveryAction
+                label={gt("Continue on {name} ({percent}% left)", {
+                  name: continuation.name,
+                  percent: continuation.remainingPercent,
+                })}
+                disabled={false}
+                onPress={continuation.onContinue}
+              />
             ) : null}
           </View>
         ) : null}

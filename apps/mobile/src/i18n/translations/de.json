@@ -4699,6 +4699,7 @@
   "df86826bcb3eb1c3": "Jetzt fortsetzen",
   "f89ef34bbf5911ee": "Bei Zurücksetzung fortsetzen",
   "51a1a709a4972f7e": "Bis zur Zurücksetzung zurückstellen",
+  "4aa079c01caa4cc3": "Auf {name} fortsetzen (noch {percent} %)",
   "e2dd1df33d37f171": "ChatGPT-Nutzungslimit erreicht",
   "015b7a8efd63a101": "Das ausgewählte Projekt ist nicht verfügbar. Verbinde dich erneut und versuch es noch einmal.",
   "3a0eca38b1656950": "Der Server hat nicht gemeldet, ob dieses Projekt im Repository-Stammverzeichnis liegt, daher kann dieser Worktree nicht sicher wiederverwendet werden. Aktualisiere den Server oder wähle einen anderen Branch.",

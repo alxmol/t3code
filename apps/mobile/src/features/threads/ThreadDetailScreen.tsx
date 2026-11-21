@@ -16,6 +16,7 @@ import { parseThreadKey, threadKey } from "@t3tools/client-runtime/state/entitie
 import { createThreadVisitTracker } from "@t3tools/client-runtime/state/thread-visits";
 import { useChildThreadInputs, useThreadReportedModelSelection } from "../../state/entities";
 import { UsageLimitRecoveryCard } from "./UsageLimitRecoveryCard";
+import { useUsageLimitContinuation } from "./use-usage-limit-continuation";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import {
   effectiveSnoozed,
@@ -1010,6 +1011,12 @@ function ThreadDetailBody(
   if (usageLimitsPanel !== null && usageLimitsPanel.key !== usageLimitsKey) {
     setUsageLimitsPanel(null);
   }
+  const usageLimitContinuation = useUsageLimitContinuation({
+    thread: props.selectedThread,
+    environmentId: props.environmentId,
+    providers: props.serverConfig?.providers ?? [],
+    canSwitchProvider: props.canSwitchThreadProvider,
+  });
   const usageLimitsReport =
     usageLimitsPanel !== null && usageLimitsPanel.key === usageLimitsKey
       ? collectProviderUsageLimits(
@@ -1719,6 +1726,7 @@ function ThreadDetailBody(
                       key={props.selectedThread.latestRun?.runId}
                       thread={props.selectedThread}
                       environmentId={props.environmentId}
+                      continuation={usageLimitContinuation}
                     />
                     <ChildThreadApprovals
                       threadRef={props.selectedThreadDetailRef}

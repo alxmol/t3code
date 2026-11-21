@@ -25,6 +25,7 @@ import {
   paceRemainingPercent,
   usesChatGptSharing,
   resolveNewThreadModelSelection,
+  usageLimitContinuation,
 } from "./usageLimits.ts";
 import { collectLimitNotices } from "./usageLimitsCopy.ts";
 
@@ -209,6 +210,138 @@ describe("new thread model fallback", () => {
       ).toEqual(usesFallback ? fallback : defaultSelection);
     },
   );
+});
+
+describe("continuing a usage-limited thread on another account", () => {
+  const registry = ProviderDriverKind.make("acpRegistry");
+  const weekly = {
+    id: "devin_weekly",
+    kind: "weekly",
+    label: "Devin Weekly",
+    resetsAt: "2026-09-06T12:00:00.000Z",
+  } as const;
+  const model = (slug: string, isDefault = false) => ({
+    slug,
+    name: slug,
+    isCustom: false,
+    isDefault,
+    capabilities: null,
+  });
+  const account = (
+    id: string,
+    usedPercent: number | null,
+    overrides: Partial<ServerProvider> = {},
+  ) =>
+    provider({
+      driver: registry,
+      instanceId: ProviderInstanceId.make(id),
+      displayName: id,
+      iconUrl: "https://cdn.agentclientprotocol.com/registry/v1/latest/devin.svg",
+      auth: { status: "authenticated", email: `${id}@example.com` },
+      models: [model("swe-2"), model("swe-2-flash", true)],
+      ...(usedPercent === null
+        ? {}
+        : {
+            usageLimits: {
+              checkedAt: "2026-09-03T11:00:00.000Z",
+              windows: [{ ...weekly, usedPercent }],
+            },
+          }),
+      ...overrides,
+    });
+  const limited = account("devin-1", 100);
+  const offer = (others: readonly ServerProvider[], settings?: typeof DEFAULT_SERVER_SETTINGS) => {
+    const result = usageLimitContinuation({
+      providers: [limited, ...others],
+      instanceId: limited.instanceId,
+      model: "swe-2",
+      now,
+      settings,
+    });
+    return result && [result.provider.instanceId, result.model, result.remainingPercent];
+  };
+  const droidIcon = "https://cdn.agentclientprotocol.com/registry/v1/latest/factory-droid.svg";
+
+  it.each<[string, readonly ServerProvider[], ReturnType<typeof offer>]>([
+    [
+      "the account with the most quota left",
+      [account("a", 60), account("b", 11)],
+      ["b", "swe-2", 89],
+    ],
+    ["nothing when no other account has quota", [account("a", 100)], null],
+    ["nothing when it is the only account", [], null],
+    ["never another registry agent", [account("a", 0, { iconUrl: droidIcon })], null],
+    [
+      "never a local agent without a registry identity",
+      [account("a", 0, { iconUrl: undefined })],
+      null,
+    ],
+    ["never another driver", [account("a", 0, { driver: ProviderDriverKind.make("codex") })], null],
+    ["never a disabled account", [account("a", 0, { enabled: false })], null],
+    ["never an account that is not installed", [account("a", 0, { installed: false })], null],
+    [
+      "never a signed-out account",
+      [account("a", 0, { auth: { status: "unauthenticated" } })],
+      null,
+    ],
+    [
+      "never an account whose sign-in is unknown",
+      [account("a", 0, { auth: { status: "unknown" } })],
+      null,
+    ],
+    [
+      "never a second instance on the limited login",
+      [account("a", 0, { auth: { status: "authenticated", email: " Devin-1@example.com" } })],
+      null,
+    ],
+    ["never an account without a usage reading", [account("a", null)], null],
+    [
+      "never an account whose only reading predates its reset",
+      [
+        account("a", null, {
+          usageLimits: {
+            checkedAt: "2026-09-01T11:00:00.000Z",
+            windows: [{ ...weekly, usedPercent: 40, resetsAt: "2026-09-03T11:00:00.000Z" }],
+          },
+        }),
+      ],
+      null,
+    ],
+    [
+      "the tightest of an account's windows",
+      [
+        account("a", null, {
+          usageLimits: {
+            checkedAt: "2026-09-03T11:00:00.000Z",
+            windows: [
+              { ...weekly, usedPercent: 10 },
+              { ...window, usedPercent: 70 },
+            ],
+          },
+        }),
+        account("b", 50),
+      ],
+      ["b", "swe-2", 50],
+    ],
+    [
+      "the account's default model when it lacks the thread's",
+      [account("a", 20, { models: [model("other"), model("swe-2-flash", true)] })],
+      ["a", "swe-2-flash", 80],
+    ],
+  ])("offers %s", (_name, others, expected) => {
+    expect(offer(others)).toEqual(expected);
+  });
+
+  it("skips an account turned off for the project", () => {
+    const settings = {
+      ...DEFAULT_SERVER_SETTINGS,
+      providerInstances: {
+        [ProviderInstanceId.make("a")]: { driver: registry, enabled: false },
+        [ProviderInstanceId.make("b")]: { driver: registry },
+      },
+    };
+    expect(offer([account("a", 0), account("b", 30)], settings)).toEqual(["b", "swe-2", 70]);
+  });
 });
 
 describe("pace", () => {

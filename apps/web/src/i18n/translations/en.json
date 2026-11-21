@@ -4490,6 +4490,7 @@
     }
   ],
   "275a97b4af3c6482": "Copy command, for a terminal",
+  "4aa079c01caa4cc3": "Continue on {name} ({percent}% left)",
   "2b07985d23563374": "Resumes {time}",
   "a4b4e5eb6d313af9": "Reset {time}",
   "c0c3aa756405c1df": "Resets {time}",

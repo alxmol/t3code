@@ -36,6 +36,12 @@ type RecoveryProps = {
   timestampFormat: TimestampFormat;
   resetPassed?: boolean;
   displayPassed?: boolean;
+  /** Another account of the same provider with quota left; picking it only changes the selection. */
+  continuation?: {
+    readonly name: string;
+    readonly remainingPercent: number;
+    readonly onContinue: () => void;
+  } | null;
   onChange: (recovery: OrchestrationV2LimitRecoveryUpdate) => Promise<void>;
 };
 
@@ -95,9 +101,23 @@ export function usageLimitRecoveryBannerItem(
   const displayPassed = props.displayPassed ?? (displayAtMs !== null && displayAtMs <= Date.now());
   const workspaceLimit = errorCode === CHATGPT_WORKSPACE_USAGE_LIMIT_CODE;
   const chatGptLimit = workspaceLimit || errorCode === CHATGPT_USAGE_LIMIT_CODE;
-  const recoveryActions = canSchedule ? (
-    <RecoveryActions key={`${runId}:${resetAt}`} {...props} />
-  ) : null;
+  const recoveryActions =
+    canSchedule || props.continuation ? (
+      // Inline errors would widen the actions column and crush the title.
+      <span className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1">
+        {canSchedule ? <RecoveryActions key={`${runId}:${resetAt}`} {...props} /> : null}
+        {props.continuation ? (
+          <InlineButton touchTarget="padded" onClick={props.continuation.onContinue}>
+            {resolve(
+              msg("Continue on {name} ({percent}% left)", {
+                name: props.continuation.name,
+                percent: props.continuation.remainingPercent,
+              }),
+            )}
+          </InlineButton>
+        ) : null}
+      </span>
+    ) : null;
   const resumesUpcoming = resumes && !displayPassed;
   const shownAt = resumesUpcoming ? displayAt : resetAt;
   const formattedTime = shownAt
@@ -191,9 +211,8 @@ function RecoveryActions({ runId, resetAt, recovery, snoozedUntil, onChange }: R
     }
     setPending(false);
   }
-  // Inline errors would widen the actions column and crush the title.
   return (
-    <span className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1">
+    <>
       <InlineButton touchTarget="padded" disabled={pending} onClick={() => void toggle("resume")}>
         {pending
           ? gt("Saving...")
@@ -210,6 +229,6 @@ function RecoveryActions({ runId, resetAt, recovery, snoozedUntil, onChange }: R
       >
         {pending ? gt("Saving...") : snoozed ? gt("Wake now") : gt("Snooze until reset")}
       </InlineButton>
-    </span>
+    </>
   );
 }

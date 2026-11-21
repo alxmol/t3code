@@ -4,7 +4,10 @@ import { useGT, useMessages } from "gt-react";
 import { ChildThreadApprovals } from "./chat/ChildThreadApprovals";
 import { workspaceAreaProps } from "../lib/workspaceFocus";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
-import { resolveNewThreadModelSelection } from "@t3tools/shared/usageLimits";
+import {
+  resolveNewThreadModelSelection,
+  usageLimitContinuation,
+} from "@t3tools/shared/usageLimits";
 import { queuedRunEditBlockedReason } from "@t3tools/client-runtime/queued-run-edit";
 import { ScrollToEndButton, WorkspaceFileDropOverlay } from "./chat/TimelineOverlays";
 import { usePasteToFocusComposer } from "./chat/usePasteToFocusComposer";
@@ -2636,6 +2639,22 @@ export default function ChatView(props: ChatViewProps) {
     );
     return item ? [item] : [];
   });
+  const limitedInstanceId = limitRecoveryRun === null ? null : serverRuntime?.providerInstanceId;
+  // Offered only while the composer still points at the limited account; picking another ends it.
+  const limitContinuation =
+    limitedInstanceId &&
+    activeThreadShell &&
+    supportsProviderSwitchingViaHandoff &&
+    pendingHandoffSelection?.instanceId === limitedInstanceId
+      ? usageLimitContinuation({
+          providers: providerStatuses,
+          instanceId: limitedInstanceId,
+          model: activeThreadShell.modelSelection.model,
+          now: Date.parse(`${nowMinute}:00Z`),
+          settings,
+          projectId: activeThreadShell.projectId,
+        })
+      : null;
   const limitRecoveryBanner = useUsageLimitRecoveryBannerItem(
     limitRecoveryRun !== null && activeThreadShell !== null
       ? {
@@ -2648,6 +2667,15 @@ export default function ChatView(props: ChatViewProps) {
           recovery: activeThreadShell.limitRecovery ?? null,
           snoozedUntil: activeThreadShell.snoozedUntil,
           timestampFormat,
+          continuation: limitContinuation && {
+            name: limitContinuation.provider.displayName ?? limitContinuation.provider.instanceId,
+            remainingPercent: limitContinuation.remainingPercent,
+            onContinue: () =>
+              onProviderModelSelectStable(
+                limitContinuation.provider.instanceId,
+                limitContinuation.model,
+              ),
+          },
           onChange: async (limitRecovery) => {
             const result = await updateThreadMetadata({
               environmentId,

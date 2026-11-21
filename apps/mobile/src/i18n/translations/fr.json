@@ -4693,6 +4693,7 @@
   "df86826bcb3eb1c3": "Reprendre maintenant",
   "f89ef34bbf5911ee": "Reprendre à la réinitialisation",
   "51a1a709a4972f7e": "Reporter jusqu’à la réinitialisation",
+  "4aa079c01caa4cc3": "Continuer sur {name} ({percent} % restants)",
   "e2dd1df33d37f171": "Limite d’utilisation ChatGPT atteinte",
   "015b7a8efd63a101": "Le projet sélectionné n’est pas disponible. Reconnectez-vous et réessayez.",
   "3a0eca38b1656950": "Le serveur n’a pas indiqué si ce projet est à la racine du dépôt, ce worktree ne peut donc pas être réutilisé en toute sécurité. Mettez à jour le serveur ou choisissez une autre branche.",

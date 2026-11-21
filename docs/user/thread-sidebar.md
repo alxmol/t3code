@@ -269,6 +269,12 @@ the snooze. Enable **Snooze until limits reset** in thread behavior settings to
 snooze limit stops by default. Providers without a reset time offer manual
 retry and the normal snooze choices.
 
+When another signed-in account of the same provider still has quota, the notice
+also offers **Continue on** that account with how much it has left. This only
+selects the account for the thread; your next message runs there, with the
+conversation handed over. T3 Code never changes accounts on its own. An account
+whose limits T3 Code cannot read is not offered; pick it in the model picker.
+
 On web and desktop, use **Agents** to follow work delegated to subagents. Click
 a subagent there or on its conversation card to open it in the right panel,
 beside the thread you are in. See

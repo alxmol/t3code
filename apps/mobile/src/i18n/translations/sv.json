@@ -4699,6 +4699,7 @@
   "df86826bcb3eb1c3": "Återuppta nu",
   "f89ef34bbf5911ee": "Återuppta vid återställning",
   "51a1a709a4972f7e": "Snooza till återställning",
+  "4aa079c01caa4cc3": "Fortsätt på {name} ({percent} % kvar)",
   "e2dd1df33d37f171": "Användningsgränsen för ChatGPT har nåtts",
   "015b7a8efd63a101": "Det valda projektet är inte tillgängligt. Återanslut och försök igen.",
   "3a0eca38b1656950": "Servern rapporterade inte om projektet ligger i repots rot, så den här worktree kan inte återanvändas säkert. Uppdatera servern eller välj en annan gren.",
