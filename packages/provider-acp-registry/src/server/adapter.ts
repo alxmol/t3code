@@ -9,6 +9,7 @@ import {
   extractDevinSubagentUpdate,
   devinAnswerablePermissionOptions,
 } from "./devinAcp.ts";
+import { withDevinToolRows } from "./devinToolRows.ts";
 import {
   DROID_ORCHESTRATION_INSTRUCTIONS,
   droidLeftSpec,
@@ -410,7 +411,11 @@ export const makeAcpRegistryAdapterV2 = Effect.fn("makeAcpRegistryAdapterV2")(fu
           alwaysSetModel: true,
         }),
     mcpOverHttp: useHttpMcpServers,
-    makeRuntime: isDroid ? makeDroidContextRuntime(options, catalog, makeRuntime) : makeRuntime,
+    makeRuntime: isDroid
+      ? makeDroidContextRuntime(options, catalog, makeRuntime)
+      : isDevin
+        ? (input) => makeRuntime(input).pipe(Effect.map(withDevinToolRows))
+        : makeRuntime,
     ...(runtimeCoordinator === undefined
       ? {}
       : {
