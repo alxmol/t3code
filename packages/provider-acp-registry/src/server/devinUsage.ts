@@ -23,6 +23,7 @@ const DEVIN_USAGE_URL = "https://app.devin.ai/settings/usage";
 export const DEVIN_USAGE_COMMAND = {
   name: "usage",
   description: "Show this account's remaining Devin quota",
+  category: "Account",
 } as const;
 
 export interface DevinUsageWindow {

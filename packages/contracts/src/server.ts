@@ -117,6 +117,8 @@ export const ServerProviderSlashCommand = Schema.Struct({
   name: TrimmedNonEmptyString,
   description: Schema.optional(TrimmedNonEmptyString),
   input: Schema.optional(ServerProviderSlashCommandInput),
+  /** The agent's own grouping for the command, shown as a label. */
+  category: Schema.optional(TrimmedNonEmptyString),
 });
 export type ServerProviderSlashCommand = typeof ServerProviderSlashCommand.Type;
 

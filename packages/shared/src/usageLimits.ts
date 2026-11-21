@@ -865,7 +865,10 @@ export function withUsageLimitsCommands(
     }
     const commands = (items: readonly ServerProviderSlashCommand[]) => [
       ...items.filter((command) => command.name !== USAGE_LIMITS_COMMAND.name),
-      USAGE_LIMITS_COMMAND,
+      // Beside an agent's categorized commands, an unlabelled one would look out of place.
+      items.some((command) => command.category)
+        ? { ...USAGE_LIMITS_COMMAND, category: "Account" }
+        : USAGE_LIMITS_COMMAND,
     ];
     return {
       ...provider,

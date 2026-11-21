@@ -299,6 +299,11 @@ const ComposerCommandMenuItem = memo(function ComposerCommandMenuItem(props: {
             showSkillSuffix={props.triggerKind === "skill"}
           />
         ) : null}
+        {props.item.type === "provider-slash-command" && props.item.command.category ? (
+          <Badge className="ms-auto" variant="secondary">
+            {props.item.command.category}
+          </Badge>
+        ) : null}
       </span>
     </CommandItem>
   );

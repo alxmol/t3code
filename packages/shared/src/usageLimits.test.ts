@@ -10,6 +10,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   type LimitAccount,
+  USAGE_LIMITS_COMMAND,
   displayLimitWindows,
   cursorUsageWindowDetails,
   collectProviderUsageLimits,
@@ -1839,6 +1840,14 @@ describe("/usage-limits", () => {
     ]);
     expect(mixed[2]).toBe(unrelated);
     expect(mixed[3]).toBe(disabled);
+    const categorized = provider({
+      usageLimits: limits,
+      slashCommands: [{ name: "status", category: "Account" }],
+    });
+    expect(withUsageLimitsCommands([categorized], [])[0]?.slashCommands.at(-1)).toEqual({
+      ...USAGE_LIMITS_COMMAND,
+      category: "Account",
+    });
   });
 });
 

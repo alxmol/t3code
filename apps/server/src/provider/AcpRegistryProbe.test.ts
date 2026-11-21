@@ -314,8 +314,11 @@ describe("ACP Registry probe", () => {
         name: "create_plan",
         description: " Create a plan ",
         input: { type: "text", hint: " topic " },
+        _meta: { "cognition.ai/category": " Session ", "cognition.ai/icon": "file-text" },
       },
       { name: "CREATE_PLAN", description: "duplicate" },
+      { name: "untyped", description: "", _meta: { "cognition.ai/category": 7 } },
+      { name: "usage", description: "", category: "Account" },
       ...Array.from({ length: 140 }, (_, index) => ({
         name: `command_${index}`,
         description: "",
@@ -323,12 +326,17 @@ describe("ACP Registry probe", () => {
       { name: "$late-skill", description: "Advertised after 128 commands" },
     ]);
 
-    expect(commands.slashCommands).toHaveLength(141);
+    expect(commands.slashCommands).toHaveLength(143);
+    expect(commands.slashCommands.slice(1, 3)).toEqual([
+      { name: "untyped" },
+      { name: "usage", category: "Account" },
+    ]);
     expect(commands.slashCommands.at(-1)).toEqual({ name: "command_139" });
     expect(commands.slashCommands[0]).toEqual({
       name: "create_plan",
       description: "Create a plan",
       input: { hint: "topic" },
+      category: "Session",
     });
     expect(
       commands.slashCommands.filter((command) => command.name.toLowerCase() === "create_plan"),

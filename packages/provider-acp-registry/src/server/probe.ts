@@ -286,8 +286,18 @@ export function acpRegistryAdvertisesModelCatalog(
   );
 }
 
+const MAX_CATEGORY_LENGTH = 64;
+
+// Devin names each command's group in `_meta`; a command T3 adds itself carries `category`.
+function commandCategory(
+  command: EffectAcpSchema.AvailableCommand & { readonly category?: string },
+): string {
+  const category = command._meta?.["cognition.ai/category"] ?? command.category;
+  return typeof category === "string" ? boundedText(category, MAX_CATEGORY_LENGTH) : "";
+}
+
 export function normalizeAcpRegistryCommands(
-  commands: ReadonlyArray<EffectAcpSchema.AvailableCommand>,
+  commands: ReadonlyArray<EffectAcpSchema.AvailableCommand & { readonly category?: string }>,
 ): AcpRegistryAvailableCommands {
   const seen = new Set<string>();
   const slashCommands: Array<ServerProviderSlashCommand> = [];
@@ -300,6 +310,7 @@ export function normalizeAcpRegistryCommands(
     seen.add(key);
     const description = boundedText(command.description, MAX_DESCRIPTION_LENGTH);
     const hint = command.input ? boundedText(command.input.hint, MAX_DESCRIPTION_LENGTH) : "";
+    const category = commandCategory(command);
     if (name.startsWith("$")) {
       const skillName = boundedOpaqueValue(name.slice(1), MAX_ID_LENGTH);
       if (skillName === undefined) continue;
@@ -315,6 +326,7 @@ export function normalizeAcpRegistryCommands(
         name,
         ...(description ? { description } : {}),
         ...(hint ? { input: { hint } } : {}),
+        ...(category ? { category } : {}),
       });
     }
   }
