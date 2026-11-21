@@ -69,6 +69,7 @@ import { DROID_CONTEXT_COMMAND } from "./droidContext.ts";
 import { readDroidSubscriptionUsageLimits } from "./droidUsageLimits.ts";
 import * as AcpRegistryAuth from "./auth.ts";
 import * as AcpRegistryAuthenticationState from "./authenticationState.ts";
+import { readDevinAccount } from "./devinAccount.ts";
 
 const DRIVER_KIND = ProviderDriverKind.make("acpRegistry");
 const decodeSettings = Schema.decodeSync(AcpRegistrySettings);
@@ -747,9 +748,30 @@ export const AcpRegistryDriver: ProviderDriver<AcpRegistrySettings, AcpRegistryD
         return [next, next.models === provider.models ? learned : next.models];
       });
     const clearLearnedModels = Ref.set(learnedModels, []);
+    // Devin names an instance's account only through its CLI, run with that instance's environment.
+    const withDevinAccount = (provider: ServerProvider) =>
+      !isDevinAgent(effectiveConfig) || !provider.enabled || !provider.installed
+        ? Effect.succeed(provider)
+        : catalog.resolve(effectiveConfig, host.paths.cwd, processEnvironment).pipe(
+            Effect.flatMap((resolved) =>
+              readDevinAccount({
+                command: resolved.spawn.command,
+                env: { ...resolved.spawn.env, ...processEnvironment },
+              }),
+            ),
+            Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+            Effect.scoped,
+            Effect.map((account) =>
+              account === undefined
+                ? provider
+                : { ...provider, auth: { ...provider.auth, ...account } },
+            ),
+            Effect.orElseSucceed(() => provider),
+          );
     const withLiveRuntimeState = Effect.fn("AcpRegistryDriver.withLiveRuntimeState")(function* (
-      input: ServerProvider,
+      reported: ServerProvider,
     ) {
+      const input = yield* withDevinAccount(reported);
       if (input.auth.status === "unauthenticated") yield* confirmedAuthentication.set(false);
       const provider =
         input.enabled &&
