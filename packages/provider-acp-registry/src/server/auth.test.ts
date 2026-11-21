@@ -63,6 +63,7 @@ const makeHarness = (
   settings = decodeSettings({ agentId: "test-agent" }),
   providerInstanceId = instanceId,
   authenticateError?: AcpRequestError,
+  environment: NodeJS.ProcessEnv = { PATH: "/tools", OVERRIDE: "base" },
 ) =>
   Effect.gen(function* () {
     const verify = yield* Deferred.make<void>();
@@ -83,7 +84,7 @@ const makeHarness = (
       instanceId: providerInstanceId,
       settings,
       cwd: "/workspace",
-      environment: { PATH: "/tools", OVERRIDE: "base" },
+      environment,
       onChanged: (value) =>
         Effect.sync(() => {
           changed.push(value);
@@ -240,6 +241,19 @@ it.effect("keeps local credentials separate from a matching registry agent ID", 
   }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
 
+it.effect("keeps credentials separate for instances with their own profile directory", () =>
+  Effect.gen(function* () {
+    const key = (environment: NodeJS.ProcessEnv) =>
+      makeHarness(browserMethod, false, undefined, undefined, undefined, environment).pipe(
+        Effect.map((harness) => harness.controller.credentialBinding?.key),
+      );
+    const shared = yield* key({ HOME: "/home/me", PATH: "/tools" });
+    assert.strictEqual(yield* key({ HOME: "/home/me", PATH: "/other" }), shared);
+    const second = yield* key({ HOME: "/home/me", XDG_DATA_HOME: "/accounts/2" });
+    assert.notStrictEqual(second, shared);
+    assert.notStrictEqual(yield* key({ HOME: "/home/me", XDG_DATA_HOME: "/accounts/3" }), second);
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
+);
 it.effect(
   "discovers methods without signing in, then waits for browser consent and session verification",
   () =>

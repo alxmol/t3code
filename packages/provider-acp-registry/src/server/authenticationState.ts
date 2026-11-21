@@ -24,6 +24,16 @@ const hash = Effect.fn("AcpRegistryAuthenticationState.hash")(function* (value: 
   return Hex.encode(digest);
 });
 
+// An agent keeps its sign-in under these, so an instance that overrides one holds its own account.
+export const ACP_PROFILE_DIRECTORY_VARIABLES = [
+  "HOME",
+  "XDG_CONFIG_HOME",
+  "XDG_DATA_HOME",
+  "XDG_STATE_HOME",
+  "APPDATA",
+  "LOCALAPPDATA",
+] as const;
+
 export const makeAcpRegistryAuthenticationState = Effect.fn("makeAcpRegistryAuthenticationState")(
   function* (input: {
     readonly cacheDir: string;
@@ -45,14 +55,9 @@ export const makeAcpRegistryAuthenticationState = Effect.fn("makeAcpRegistryAuth
       distribution: input.settings.distribution,
       authMethodId: input.settings.authMethodId,
       environment: [...input.environment].toSorted((a, b) => a.name.localeCompare(b.name)),
-      profiles: [
-        "HOME",
-        "XDG_CONFIG_HOME",
-        "XDG_DATA_HOME",
-        "XDG_STATE_HOME",
-        "APPDATA",
-        "LOCALAPPDATA",
-      ].map((name) => input.processEnvironment[name] ?? null),
+      profiles: ACP_PROFILE_DIRECTORY_VARIABLES.map(
+        (name) => input.processEnvironment[name] ?? null,
+      ),
     });
     const saved = yield* fs.readFileString(filePath).pipe(
       Effect.flatMap(decodeState),
