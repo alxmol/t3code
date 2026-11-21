@@ -1,7 +1,10 @@
 import * as NodeOS from "node:os";
 
 import type { ServerProviderUsageLimits, ServerProviderUsageWindow } from "@t3tools/contracts";
-import { makeUsageLimits } from "@t3tools/provider-core/server/usageLimits";
+import {
+  makeUnavailableUsageLimits,
+  makeUsageLimits,
+} from "@t3tools/provider-core/server/usageLimits";
 import type * as PtyAdapter from "@t3tools/shared/PtyAdapter";
 import type * as AcpSessionRuntime from "@t3tools/provider-acp/server/AcpSessionRuntime";
 import * as DateTime from "effect/DateTime";
@@ -15,6 +18,7 @@ const READ_TIMEOUT = "30 seconds";
 const QUIET = "700 millis";
 const MAX_QUIET_ROUNDS = 12;
 const MINUTES: Record<string, number> = { w: 10_080, d: 1_440, h: 60, m: 1 };
+const DEVIN_USAGE_URL = "https://app.devin.ai/settings/usage";
 
 export const DEVIN_USAGE_COMMAND = {
   name: "usage",
@@ -91,28 +95,36 @@ const WINDOW_KINDS: Record<
   Monthly: { kind: "monthly" },
 };
 
+/** The account's windows, or a failed reading; either way with the page that has the figures. */
 export function devinUsageLimits(
-  usage: DevinUsage,
+  usage: DevinUsage | undefined,
   now: number,
-): ServerProviderUsageLimits | undefined {
-  if (usage.windows.length === 0) return undefined;
-  return makeUsageLimits({
-    checkedAt: DateTime.formatIso(DateTime.makeUnsafe(now)),
-    windows: usage.windows.map((window) => {
-      const minutes = minutesUntilReset(window.resetsIn);
-      return {
-        id: `devin_${window.label.toLowerCase()}`,
-        label: `Devin ${window.label}`,
-        ...(WINDOW_KINDS[window.label] ?? { kind: "other" as const }),
-        usedPercent: window.usedPercent,
-        ...(minutes === undefined
-          ? {}
-          : { resetsAt: DateTime.formatIso(DateTime.makeUnsafe(now + minutes * 60_000)) }),
-      };
-    }),
-  });
+): ServerProviderUsageLimits {
+  const checkedAt = DateTime.formatIso(DateTime.makeUnsafe(now));
+  const limits =
+    usage === undefined || usage.windows.length === 0
+      ? makeUnavailableUsageLimits({
+          checkedAt,
+          reason: "probeFailed",
+          message: "Devin's app did not show this account's usage.",
+        })
+      : makeUsageLimits({
+          checkedAt,
+          windows: usage.windows.map((window) => {
+            const minutes = minutesUntilReset(window.resetsIn);
+            return {
+              id: `devin_${window.label.toLowerCase()}`,
+              label: `Devin ${window.label}`,
+              ...(WINDOW_KINDS[window.label] ?? { kind: "other" as const }),
+              usedPercent: window.usedPercent,
+              ...(minutes === undefined
+                ? {}
+                : { resetsAt: DateTime.formatIso(DateTime.makeUnsafe(now + minutes * 60_000)) }),
+            };
+          }),
+        });
+  return { ...limits, externalUsage: { label: "Devin usage", url: DEVIN_USAGE_URL } };
 }
-
 export function formatDevinUsage(usage: DevinUsage | undefined, account?: string): string {
   if (usage === undefined || usage.windows.length === 0) {
     return "Devin did not report this account's usage. Its own app shows it under `/usage`.";

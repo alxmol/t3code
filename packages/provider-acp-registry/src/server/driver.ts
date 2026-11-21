@@ -65,7 +65,7 @@ import {
 } from "./probe.ts";
 import * as AcpRegistrySupport from "./AcpRegistrySupport.ts";
 import * as AcpRegistryRuntimeCoordinator from "./AcpRegistryRuntimeCoordinator.ts";
-import { isDroidAgent } from "./droidAcp.ts";
+import { droidUsageLimits, isDroidAgent } from "./droidAcp.ts";
 import { DROID_CONTEXT_COMMAND } from "./droidContext.ts";
 import * as AcpRegistryAuth from "./auth.ts";
 import * as AcpRegistryAuthenticationState from "./authenticationState.ts";
@@ -788,12 +788,11 @@ export const AcpRegistryDriver: ProviderDriver<AcpRegistrySettings, AcpRegistryD
           Effect.forkDetach,
         );
       }
-      const usageLimits = cached?.usage && devinUsageLimits(cached.usage, cached.readAt);
-      if (!usageLimits) return provider;
-      const plan = cached?.usage?.plan;
+      if (cached === null) return provider;
+      const plan = cached.usage?.plan;
       return {
         ...provider,
-        usageLimits,
+        usageLimits: devinUsageLimits(cached.usage, cached.readAt),
         auth: { ...provider.auth, ...(plan ? { label: plan } : {}) },
       };
     });
@@ -823,7 +822,10 @@ export const AcpRegistryDriver: ProviderDriver<AcpRegistrySettings, AcpRegistryD
     const withLiveRuntimeState = Effect.fn("AcpRegistryDriver.withLiveRuntimeState")(function* (
       reported: ServerProvider,
     ) {
-      const input = yield* withDevinAccount(reported);
+      const signedIn = yield* withDevinAccount(reported);
+      const input = isDroidAgent(effectiveConfig)
+        ? { ...signedIn, usageLimits: droidUsageLimits(signedIn.checkedAt) }
+        : signedIn;
       if (input.auth.status === "unauthenticated") yield* confirmedAuthentication.set(false);
       const provider =
         input.enabled &&

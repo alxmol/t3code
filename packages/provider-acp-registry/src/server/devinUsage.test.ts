@@ -36,8 +36,9 @@ describe("Devin usage", () => {
     expect(parseDevinUsage("Devin CLI ❭ Ask Devin to build features")).toEqual({ windows: [] });
   });
 
-  it("reports a window with the time it resets", () => {
+  it("reports a window with the time it resets, and links to Devin's own usage page", () => {
     const now = Date.UTC(2026, 10, 21, 5, 0, 0);
+    const externalUsage = { label: "Devin usage", url: "https://app.devin.ai/settings/usage" };
     expect(
       devinUsageLimits(
         { plan: "Max", windows: [{ label: "Weekly", usedPercent: 11, resetsIn: "1d 3h" }] },
@@ -55,8 +56,18 @@ describe("Devin usage", () => {
           resetsAt: "2026-11-22T08:00:00.000Z",
         },
       ],
+      externalUsage,
     });
-    expect(devinUsageLimits({ windows: [] }, now)).toBeUndefined();
+    // A reading that found nothing still leads to the page that has the figures.
+    expect(devinUsageLimits(undefined, now)).toEqual({
+      checkedAt: "2026-11-21T05:00:00.000Z",
+      windows: [],
+      unavailable: {
+        reason: "probeFailed",
+        message: "Devin's app did not show this account's usage.",
+      },
+      externalUsage,
+    });
   });
 
   it("answers /usage with what is used and what is left", () => {

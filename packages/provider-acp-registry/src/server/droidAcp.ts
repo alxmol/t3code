@@ -1,4 +1,8 @@
-import { type OrchestrationV2UserInputQuestion, TrimmedNonEmptyString } from "@t3tools/contracts";
+import {
+  type OrchestrationV2UserInputQuestion,
+  type ServerProviderUsageLimits,
+  TrimmedNonEmptyString,
+} from "@t3tools/contracts";
 import type {
   AcpAdapterV2Flavor,
   AcpAdapterV2SubagentUpdate,
@@ -134,6 +138,20 @@ export function isDroidAgent(settings: {
     ? /^droid(\.exe|\.cmd)?$/i.test(settings.commandPath.split(/[\\/]/).pop() ?? "")
     : settings.agentId === "factory-droid";
 }
+
+/**
+ * Droid reports no allowance over ACP. "unsupported" keeps the entry out of the usage rows and
+ * out of the failed-reading notices, so only the link to Factory's own page shows.
+ */
+export const droidUsageLimits = (checkedAt: string): ServerProviderUsageLimits => ({
+  checkedAt,
+  windows: [],
+  unavailable: {
+    reason: "unsupported",
+    message: "Droid does not report its usage to T3 Code. Factory's website shows it.",
+  },
+  externalUsage: { label: "Droid usage", url: "https://app.factory.ai/settings/usage" },
+});
 
 // Droid reports zero tokens before a session's first reply and after a command Claude Code answers itself.
 export const isDroidEmptyUsageUpdate: NonNullable<AcpAdapterV2Flavor["ignoreSessionUpdate"]> = (

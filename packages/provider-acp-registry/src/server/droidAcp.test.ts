@@ -16,6 +16,7 @@ import {
   droidPermissionDisposition,
   droidPromptFailure,
   droidSpecMarkdown,
+  droidUsageLimits,
   extractDroidSubagentUpdate,
   isDroidAgent,
   isDroidEmptyUsageUpdate,
@@ -334,6 +335,20 @@ describe("Droid prompt failures", () => {
     expect(failure).toMatchObject({
       class: "provider_error",
       message: "Internal error: model not found",
+    });
+  });
+});
+
+describe("Droid usage", () => {
+  it("links to Factory's usage page without rows or a failed reading", () => {
+    expect(droidUsageLimits("2026-11-21T05:00:00.000Z")).toEqual({
+      checkedAt: "2026-11-21T05:00:00.000Z",
+      windows: [],
+      unavailable: {
+        reason: "unsupported",
+        message: "Droid does not report its usage to T3 Code. Factory's website shows it.",
+      },
+      externalUsage: { label: "Droid usage", url: "https://app.factory.ai/settings/usage" },
     });
   });
 });
