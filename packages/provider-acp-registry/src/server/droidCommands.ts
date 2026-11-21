@@ -120,7 +120,7 @@ export function formatDroidCost(loaded: DroidLoadedSession): string {
     "",
     credits === undefined
       ? "These are Droid's own token counts for this session, not a price."
-      : "These are Droid's own counts of tokens and Factory credits for this session, not a price.",
+      : "These are Droid's own counts, not a price. Droid counts credits for every model; a model on your own key or subscription is not charged in Factory credits.",
   ].join("\n");
 }
 

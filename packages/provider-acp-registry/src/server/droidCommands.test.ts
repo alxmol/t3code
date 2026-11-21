@@ -42,7 +42,7 @@ describe("formatDroidCost", () => {
         "| This session | 8 | 330 | 6.4k | 58.9k | 132 | 625 |",
         "| Last model call | 360 | 4 | – | 21.4k | – | – |",
         "",
-        "These are Droid's own counts of tokens and Factory credits for this session, not a price.",
+        "These are Droid's own counts, not a price. Droid counts credits for every model; a model on your own key or subscription is not charged in Factory credits.",
       ].join("\n"),
     );
   });
