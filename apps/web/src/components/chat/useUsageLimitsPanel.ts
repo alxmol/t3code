@@ -18,12 +18,21 @@ export function useUsageLimitsPanel(input: {
   readonly threadKey: string;
   readonly panelKey: string | null;
   readonly providerInstanceId: ProviderInstanceId | null;
+  readonly model: string | null;
   readonly provider: ServerProvider | null;
   readonly providers: readonly ServerProvider[];
   readonly sources: UsageLimitSourceSnapshots;
 }) {
-  const { environmentId, threadKey, panelKey, providerInstanceId, provider, providers, sources } =
-    input;
+  const {
+    environmentId,
+    threadKey,
+    panelKey,
+    providerInstanceId,
+    model,
+    provider,
+    providers,
+    sources,
+  } = input;
   const messages = useMessages();
   const [panel, setPanel] = useState<{
     readonly key: string;
@@ -35,7 +44,7 @@ export function useUsageLimitsPanel(input: {
   }
   const report =
     panel !== null && panelKey !== null && panel.key === panelKey && providerInstanceId !== null
-      ? collectProviderUsageLimits(providerInstanceId, providers, sources, panel.now)
+      ? collectProviderUsageLimits(providerInstanceId, providers, sources, panel.now, model)
       : null;
   const banner =
     report !== null && panel !== null
@@ -55,7 +64,7 @@ export function useUsageLimitsPanel(input: {
     const now = Date.now();
     const nextReport =
       providerInstanceId !== null && panelKey !== null
-        ? collectProviderUsageLimits(providerInstanceId, providers, sources, now)
+        ? collectProviderUsageLimits(providerInstanceId, providers, sources, now, model)
         : null;
     if (nextReport && panelKey !== null) {
       setPanel({ key: panelKey, threadKey, now });
