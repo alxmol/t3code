@@ -94,6 +94,7 @@ const isAcpRequestError = Schema.is(EffectAcpErrors.AcpRequestError);
 
 export interface AcpRegistryAdapterV2Options {
   readonly instanceId: Parameters<typeof makeAcpAdapterV2>[0]["instanceId"];
+  readonly displayName?: string | undefined;
   readonly settings: AcpRegistrySettings;
   readonly environment: NodeJS.ProcessEnv;
   readonly selfInvocation: SelfInvocation;
@@ -267,6 +268,7 @@ function makeDevinRuntime(
                 Effect.scoped,
                 Effect.orElseSucceed(() => undefined),
               ),
+          options.displayName,
         ),
       ),
     );
@@ -553,6 +555,7 @@ export const AcpRegistryAdapterV2Driver: ProviderAdapterDriver<
       const makeNativeLogger = yield* makeAcpNativeLoggerFactory();
       return yield* makeAcpRegistryAdapterV2({
         instanceId: input.instanceId,
+        displayName: input.displayName,
         settings: { ...input.config, enabled: input.enabled },
         environment: yield* mergeProviderInstanceEnvironment(input.environment, hostEnvironment),
         selfInvocation,
