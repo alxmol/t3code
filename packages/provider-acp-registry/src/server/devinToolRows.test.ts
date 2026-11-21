@@ -66,6 +66,16 @@ describe("makeDevinToolRows", () => {
     ]);
   });
 
+  it("names the terminal of a command that is still running, and no other", () => {
+    const rows = makeDevinToolRows();
+    rows.project(command);
+    rows.terminalCreated("t3-term-2", "ls /nonexistent-zz");
+    rows.terminalCreated("t3-term-3", "npm run dev");
+    expect(rows.runningCommandTerminals()).toEqual(["t3-term-2"]);
+    rows.project(commandCompleted);
+    expect(rows.runningCommandTerminals()).toEqual([]);
+  });
+
   const task = "Read NOTES.md and reply with its marker only.";
   const call = notify({
     sessionUpdate: "tool_call",

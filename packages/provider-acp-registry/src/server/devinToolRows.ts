@@ -75,6 +75,13 @@ export function makeDevinToolRows() {
         exitCode: response.exitStatus?.exitCode,
       });
     },
+    /** Terminals of commands Devin has not reported as ended. */
+    runningCommandTerminals: (): ReadonlyArray<string> => {
+      const running = new Set(commands.values());
+      return Array.from(terminals).flatMap(([terminalId, run]) =>
+        !run.exited && running.has(run.command) ? [terminalId] : [],
+      );
+    },
     project: (notification: Notification): ReadonlyArray<Notification> => {
       const update = notification.update;
       if (update.sessionUpdate !== "tool_call" && update.sessionUpdate !== "tool_call_update") {
@@ -146,21 +153,49 @@ export function withDevinToolRows(
   runtime: AcpSessionRuntime.AcpSessionRuntime["Service"],
 ): AcpSessionRuntime.AcpSessionRuntime["Service"] {
   const rows = makeDevinToolRows();
+  const terminalSessions = new Map<string, string>();
+  let killTerminal: Parameters<typeof runtime.handleTerminalKill>[0] | undefined;
   return {
     ...runtime,
     handleCreateTerminal: (handler) =>
       runtime.handleCreateTerminal((request, context) =>
         handler(request, context).pipe(
           Effect.tap((response) =>
-            Effect.sync(() =>
+            Effect.sync(() => {
+              remember(terminalSessions, response.terminalId, request.sessionId);
               rows.terminalCreated(
                 response.terminalId,
                 [request.command, ...(request.args ?? [])].join(" "),
-              ),
-            ),
+              );
+            }),
           ),
         ),
       ),
+    handleTerminalKill: (handler) => {
+      killTerminal = handler;
+      return runtime.handleTerminalKill(handler);
+    },
+    // Devin answers session/cancel by failing the command's call and never ends its terminal.
+    cancel: Effect.suspend(() => {
+      const abandoned = rows.runningCommandTerminals();
+      return runtime.cancel.pipe(
+        Effect.ensuring(
+          Effect.forEach(
+            abandoned,
+            (terminalId) => {
+              const sessionId = terminalSessions.get(terminalId);
+              return killTerminal === undefined || sessionId === undefined
+                ? Effect.void
+                : killTerminal(
+                    { sessionId, terminalId },
+                    { requestId: `t3:stop:${terminalId}`, method: "terminal/kill" },
+                  ).pipe(Effect.ignore);
+            },
+            { discard: true },
+          ),
+        ),
+      );
+    }),
     handleTerminalOutput: (handler) =>
       runtime.handleTerminalOutput((request, context) =>
         handler(request, context).pipe(
