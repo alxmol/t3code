@@ -7,8 +7,8 @@ import {
   normalizeDevinSessionUpdate,
   normalizeDevinToolCall,
   extractDevinSubagentUpdate,
-  devinAnswerablePermissionOptions,
 } from "./devinAcp.ts";
+import { devinSessionPermissionOptions } from "./devinPermissions.ts";
 import { withDevinToolRows } from "./devinToolRows.ts";
 import { DEVIN_USAGE_COMMAND, readDevinUsage, withDevinUsageCommand } from "./devinUsage.ts";
 import * as PtyAdapter from "@t3tools/shared/PtyAdapter";
@@ -427,7 +427,7 @@ export const makeAcpRegistryAdapterV2 = Effect.fn("makeAcpRegistryAdapterV2")(fu
           normalizeSessionUpdate: normalizeDevinSessionUpdate,
           normalizeToolCall: normalizeDevinToolCall,
           extractSubagentUpdate: extractDevinSubagentUpdate,
-          answerablePermissionOptions: devinAnswerablePermissionOptions,
+          answerablePermissionOptions: devinSessionPermissionOptions,
         }
       : {}),
     ...(copilotRouting === undefined
