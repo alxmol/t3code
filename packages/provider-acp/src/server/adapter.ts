@@ -562,6 +562,12 @@ export interface AcpAdapterV2Flavor {
   readonly proposedPlanFromPermissionRequest?: (
     request: EffectAcpSchema.RequestPermissionRequest,
   ) => string | undefined;
+  /**
+   * The agent may follow its answer with another message in the same turn and nothing between
+   * (Droid, when a background job ends). The timeline keeps only a turn's last message out of
+   * its fold, so such messages continue the one before them instead of hiding it.
+   */
+  readonly joinsBackToBackAssistantMessages?: boolean;
   /** True when the agent left an option the thread selects; the next turn applies the selection again. */
   readonly leftSelectedOption?: (
     configOptions: ReadonlyArray<EffectAcpSchema.SessionConfigOption>,
@@ -3583,6 +3589,22 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           return segment;
         });
 
+        // For `joinsBackToBackAssistantMessages`: the turn's newest item other than reasoning,
+        // when it is an assistant message. A named message stays open across tool calls, so
+        // being open does not show that nothing followed it.
+        const precedingAssistantSegment = (context: ActiveAcpTurn) => {
+          const reasoning = `${context.nativeTurnId}:reasoning:`;
+          const newest = Array.from(context.itemOrdinals.keys()).findLast(
+            (nativeItemId) => !nativeItemId.startsWith(reasoning),
+          );
+          const { current, closedNamedSegments } = context.assistant;
+          if (newest === undefined) return undefined;
+          return current?.nativeItemId === newest
+            ? current
+            : Array.from(closedNamedSegments.values()).find(
+                (segment) => segment.nativeItemId === newest,
+              );
+        };
         const appendText = Effect.fnUntraced(function* (
           context: ActiveAcpTurn,
           kind: "user" | "assistant" | "reasoning",
@@ -3595,6 +3617,27 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           }
           const stream = textStreamFor(context, kind);
           const sourceMessageId = messageId || null;
+          if (
+            kind === "assistant" &&
+            flavor.joinsBackToBackAssistantMessages === true &&
+            sourceMessageId !== null &&
+            stream.current?.sourceMessageId !== sourceMessageId &&
+            !stream.closedNamedSegments.has(sourceMessageId)
+          ) {
+            const preceding = precedingAssistantSegment(context);
+            if (preceding !== undefined && preceding.sourceMessageId !== null) {
+              if (preceding !== stream.current) {
+                yield* closeTextStream(context, kind);
+                stream.closedNamedSegments.delete(preceding.sourceMessageId);
+                stream.current = { ...preceding, emitted: false, dirty: false };
+              }
+              // The item keeps its first id; later chunks of this message then match it.
+              stream.current.sourceMessageId = sourceMessageId;
+              if (!/\n\s*$/.test(stream.current.text) && !/^\s*\n/.test(text)) {
+                stream.current.text += "\n\n";
+              }
+            }
+          }
           if (
             stream.current !== null &&
             sourceMessageId !== null &&

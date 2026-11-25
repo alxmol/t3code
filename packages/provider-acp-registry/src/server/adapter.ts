@@ -381,6 +381,7 @@ export const makeAcpRegistryAdapterV2 = Effect.fn("makeAcpRegistryAdapterV2")(fu
           permissionDisposition: droidPermissionDisposition,
           approvalOptions: droidApprovalOptions,
           leftSelectedOption: droidLeftSpec,
+          joinsBackToBackAssistantMessages: true,
           extractSubagentUpdate: extractDroidSubagentUpdate,
           normalizeToolCall: normalizeDroidToolCall,
         }

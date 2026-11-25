@@ -671,6 +671,61 @@ describe("Droid over ACP", () => {
     }).pipe(Effect.provide(layerTest), Effect.scoped),
   );
 
+  // Droid answers, then adds a line when a background job ends: a second message, back to back.
+  it.live("keeps an answer and the line Droid adds after it in one message", () =>
+    Effect.gen(function* () {
+      const chunk = (messageId: string, text: string) =>
+        update({
+          sessionUpdate: "agent_message_chunk",
+          messageId,
+          content: { type: "text", text },
+        });
+      const { runtime } = yield* openDroidTurn({
+        scenario: "answer-then-follow-up",
+        interactionMode: "default",
+        entries: [
+          expectRequest("session/prompt"),
+          chunk("progress", "I'll look at the demo."),
+          update({
+            sessionUpdate: "tool_call",
+            toolCallId: "call_ls",
+            name: "LS",
+            kind: "search",
+            status: "completed",
+          }),
+          chunk("answer", "My read: keep "),
+          chunk("answer", "the design."),
+          update({
+            sessionUpdate: "agent_thought_chunk",
+            messageId: "thought",
+            content: { type: "text", text: "The job has ended." },
+          }),
+          chunk("follow-up", "\n\nThe demo server "),
+          chunk("follow-up", "shut down."),
+          chunk("closing", "Nothing else is running."),
+          respond("session/prompt", { stopReason: "end_turn" }),
+        ],
+      });
+      const events = yield* runtime.events.pipe(
+        Stream.takeUntil((event) => event.type === "turn.terminal"),
+        Stream.runCollect,
+      );
+      const messages = new Map<string, string>();
+      for (const event of events) {
+        if (event.type === "turn_item.updated" && event.turnItem.type === "assistant_message") {
+          messages.set(event.turnItem.id, event.turnItem.text);
+        }
+      }
+      // The timeline folds all but a turn's last message, so a split answer would be hidden.
+      assert.deepEqual(
+        [...messages.values()],
+        [
+          "I'll look at the demo.",
+          "My read: keep the design.\n\nThe demo server shut down.\n\nNothing else is running.",
+        ],
+      );
+    }).pipe(Effect.provide(layerTest), Effect.scoped),
+  );
   it.live("fails a rate-limited turn as a usage limit", () =>
     Effect.gen(function* () {
       const { runtime } = yield* openDroidTurn({
