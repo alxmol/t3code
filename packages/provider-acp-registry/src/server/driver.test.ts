@@ -34,7 +34,7 @@ import {
   checkAcpRegistryProviderStatus,
   isAcpRegistryCacheValid,
   updateAcpRegistryEnrichmentCache,
-  withLearnedOptionsOverAssumed,
+  withDevinModelLevels,
 } from "./driver.ts";
 import {
   acpRegistryAdvertisesModelCatalog,
@@ -362,45 +362,34 @@ describe("acpRegistrySnapshotReadiness", () => {
     expect(
       twoModels.find((model) => model.slug === "opus")?.capabilities?.optionDescriptors ?? [],
     ).toEqual([sharedMode]);
-    // Devin names no levels per model, so one that has reported nothing offers the session's.
-    expect(
-      applyAcpRegistryLiveConfiguration(
-        provider,
-        {
-          models: twoModelList,
-          currentModelId: "glm",
-          configOptions: [...liveOptions, sharedMode],
-          modelOptionIds: ["effort"],
-        },
-        [],
-        provider.models,
-        true,
-      ).models.find((model) => model.slug === "opus")?.capabilities?.optionDescriptors ?? [],
-    ).toEqual([sharedMode, liveOptions[0]]);
-    // What a Devin model reported in its own session replaces that guess.
-    const opusEffort = {
-      ...liveOptions[0]!,
-      options: [{ id: "low", label: "Low" }],
-      currentValue: "low",
-    };
-    const assumed = applyAcpRegistryLiveConfiguration(
+    // Devin names no levels per model: one nothing has opened yet offers the current model's.
+    const glmLevels = { ...liveOptions[0]!, role: "reasoning" as const };
+    const devin = applyAcpRegistryLiveConfiguration(
       provider,
       {
         models: twoModelList,
         currentModelId: "glm",
-        configOptions: [...liveOptions, sharedMode],
+        configOptions: [glmLevels, sharedMode],
         modelOptionIds: ["effort"],
       },
       [],
-      provider.models,
-      true,
     );
-    expect(
-      withLearnedOptionsOverAssumed(assumed, new Map([["opus", [opusEffort]]])).models.find(
-        (model) => model.slug === "opus",
-      )?.capabilities?.optionDescriptors ?? [],
-    ).toEqual([sharedMode, opusEffort]);
-    expect(withLearnedOptionsOverAssumed(assumed, new Map())).toBe(assumed);
+    const opusOptions = (snapshot: typeof devin) =>
+      snapshot.models.find((model) => model.slug === "opus")?.capabilities?.optionDescriptors ?? [];
+    // The snapshot itself holds no guess, so the probe's discovery still opens the model.
+    expect(opusOptions(devin)).toEqual([sharedMode]);
+    const guessed = withDevinModelLevels(devin, new Map());
+    expect(opusOptions(guessed)).toEqual([sharedMode, glmLevels]);
+    expect(withDevinModelLevels(guessed, new Map())).toBe(guessed);
+    // What the model reports once it is opened replaces the guess, also when it has no levels.
+    const opusOwn = { ...glmLevels, options: [{ id: "low", label: "Low" }], currentValue: "low" };
+    expect(opusOptions(withDevinModelLevels(guessed, new Map([["opus", [opusOwn]]])))).toEqual([
+      sharedMode,
+      opusOwn,
+    ]);
+    expect(opusOptions(withDevinModelLevels(guessed, new Map([["opus", []]])))).toEqual([
+      sharedMode,
+    ]);
     // A later session on another model keeps the options learned for this one.
     const afterOpus = applyAcpRegistryLiveConfiguration(
       afterGlm,

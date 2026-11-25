@@ -6,6 +6,7 @@ import {
   type AcpRegistryOperationError,
   type AcpRegistryProbeModel,
   type CustomModelSetting,
+  type ProviderOptionDescriptor,
   type ServerProvider,
   type ServerProviderModel,
   type ServerProviderSlashCommand,
@@ -122,7 +123,6 @@ export function updateAcpRegistryEnrichmentCache(input: {
   readonly configuration: AcpRegistryLiveConfiguration;
   readonly customModels: ReadonlyArray<CustomModelSetting>;
   readonly now: number;
-  readonly assumeCurrentModelOptions?: boolean;
 }): AcpRegistryEnrichmentCache {
   const { cache, configuration, customModels, now } = input;
   if (cache.entry === null) {
@@ -135,8 +135,6 @@ export function updateAcpRegistryEnrichmentCache(input: {
     cache.entry.provider,
     configuration,
     customModels,
-    cache.entry.provider.models,
-    input.assumeCurrentModelOptions,
   );
   if (Equal.equals(provider, cache.entry.provider)) return cache;
   return {
@@ -169,23 +167,39 @@ const isDevinAgent = (settings: Pick<AcpRegistrySettings, "source" | "agentId" |
   settings.source === "local"
     ? /^devin(\.exe|\.cmd)?$/i.test(settings.commandPath.split(/[\\/]/).pop() ?? "")
     : settings.agentId === "devin";
-// Devin's models start on the current model's options (see modelsFromDiscovery); what a model
-// reported in its own session replaces that guess.
-export function withLearnedOptionsOverAssumed(
+const isReasoningSelect = (option: ProviderOptionDescriptor) =>
+  option.type === "select" && option.role === "reasoning";
+
+// Devin names no levels per model. A model's own are known once a session or the probe's
+// discovery opened it; until then it offers the current model's as a guess, and a session
+// skips any value its model does not advertise.
+export function withDevinModelLevels(
   provider: ServerProvider,
   learned: AcpRegistryLearnedModelOptions,
 ): ServerProvider {
+  const guess = (
+    provider.models.find((model) => !model.isCustom && model.isDefault === true)?.capabilities
+      ?.optionDescriptors ?? []
+  ).filter(isReasoningSelect);
   let changed = false;
   const models = provider.models.map((model): ServerProviderModel => {
-    const options = learned.get(model.slug);
+    const own = learned.get(model.slug);
+    if (model.isCustom || model.isDefault === true || (own === undefined && guess.length === 0)) {
+      return model;
+    }
+    const levels = own ?? guess;
     const current = model.capabilities?.optionDescriptors ?? [];
-    if (model.isCustom || model.isDefault === true || options === undefined) return model;
-    const kept = current.filter((option) => !options.some(({ id }) => id === option.id));
-    if (kept.length === current.length) return model;
+    const next = [
+      ...current.filter(
+        (option) => !isReasoningSelect(option) && !levels.some(({ id }) => id === option.id),
+      ),
+      ...levels,
+    ];
+    if (Equal.equals(next, current)) return model;
     changed = true;
-    return { ...model, capabilities: createModelCapabilities({ optionDescriptors: kept }) };
+    return { ...model, capabilities: createModelCapabilities({ optionDescriptors: next }) };
   });
-  return withAcpRegistryLearnedModelOptions(changed ? { ...provider, models } : provider, learned);
+  return changed ? { ...provider, models } : provider;
 }
 const MAINTENANCE = makeManualOnlyProviderMaintenanceCapabilities({
   provider: DRIVER_KIND,
@@ -219,7 +233,6 @@ function modelsFromDiscovery(
     | undefined,
   customModels: ReadonlyArray<CustomModelSetting>,
   previousModels: ReadonlyArray<ServerProviderModel> = [],
-  assumeCurrentModelOptions = false,
 ): ReadonlyArray<ServerProviderModel> {
   const discovered = discovery?.models ?? [];
   const capabilities =
@@ -233,9 +246,7 @@ function modelsFromDiscovery(
     (descriptor) => !modelOptionIds.has(descriptor.id),
   );
   const sharedIds = new Set(shared.map((descriptor) => descriptor.id));
-  const currentModelOptions = (discovery?.configOptions ?? []).filter((descriptor) =>
-    modelOptionIds.has(descriptor.id),
-  );
+
   const capabilitiesFor = ({ id: slug, reasoningEffort }: AcpRegistryProbeModel) => {
     if (slug === discovery?.currentModelId) return capabilities;
     // The levels a model advertises replace the ones an earlier session reported.
@@ -248,18 +259,7 @@ function modelsFromDiscovery(
           descriptor.type !== "select" ||
           descriptor.role !== "reasoning"),
     );
-    // Devin names no levels per model: one that has run no session yet offers the current
-    // model's options, and a session skips any value its model does not advertise.
-    const assumed =
-      assumeCurrentModelOptions && reasoningEffort === undefined && own.length === 0
-        ? currentModelOptions
-        : [];
-    const optionDescriptors = [
-      ...shared,
-      ...own,
-      ...assumed,
-      ...(reasoningEffort ? [reasoningEffort] : []),
-    ];
+    const optionDescriptors = [...shared, ...own, ...(reasoningEffort ? [reasoningEffort] : [])];
     return optionDescriptors.length === 0
       ? EMPTY_CAPABILITIES
       : createModelCapabilities({ optionDescriptors });
@@ -394,12 +394,7 @@ function baseSnapshot(
             : input.settings.agentId.length > 0),
     },
     ...(input.message ? { message: input.message } : {}),
-    models: modelsFromDiscovery(
-      input.probe?.probe,
-      input.settings.customModels,
-      [],
-      isDevinAgent(input.settings),
-    ),
+    models: modelsFromDiscovery(input.probe?.probe, input.settings.customModels),
     ...(input.probe === undefined
       ? {}
       : {
@@ -431,7 +426,6 @@ export function applyAcpRegistryLiveConfiguration(
   configuration: AcpRegistryLiveConfiguration,
   customModels: ReadonlyArray<CustomModelSetting>,
   previousModels: ReadonlyArray<ServerProviderModel> = provider.models,
-  assumeCurrentModelOptions = false,
 ): ServerProvider {
   const { message: _staleProbeMessage, ...snapshot } = provider;
   // session/load may omit models (Kimi returns `{}`); keep the probed list
@@ -474,7 +468,6 @@ export function applyAcpRegistryLiveConfiguration(
             discovery,
             customModels,
             previousModels.filter((model) => !model.isCustom),
-            assumeCurrentModelOptions,
           ),
   };
 }
@@ -791,7 +784,7 @@ export const AcpRegistryDriver: ProviderDriver<AcpRegistrySettings, AcpRegistryD
     });
     const isDevin = isDevinAgent(effectiveConfig);
     const withLearnedModelOptions = isDevin
-      ? withLearnedOptionsOverAssumed
+      ? withDevinModelLevels
       : withAcpRegistryLearnedModelOptions;
     const applyLiveConfiguration = Effect.fn("AcpRegistryDriver.applyLiveConfiguration")(function* (
       provider: ServerProvider,
@@ -802,13 +795,7 @@ export const AcpRegistryDriver: ProviderDriver<AcpRegistrySettings, AcpRegistryD
         yield* learnedModelOptions.learn(reported.modelId, reported.options, "live");
       }
       return withLearnedModelOptions(
-        applyAcpRegistryLiveConfiguration(
-          provider,
-          configuration,
-          effectiveConfig.customModels,
-          provider.models,
-          isDevin,
-        ),
+        applyAcpRegistryLiveConfiguration(provider, configuration, effectiveConfig.customModels),
         yield* learnedModelOptions.get,
       );
     });
@@ -822,6 +809,7 @@ export const AcpRegistryDriver: ProviderDriver<AcpRegistrySettings, AcpRegistryD
       readonly stale?: true;
     } | null>(null);
     const devinUsageReading = yield* Ref.make(false);
+    const probing = yield* Semaphore.make(1);
     let refreshSnapshot: Effect.Effect<void> = Effect.void;
     const withDevinUsage = Effect.fn("AcpRegistryDriver.withDevinUsage")(function* (
       provider: ServerProvider,
@@ -841,6 +829,8 @@ export const AcpRegistryDriver: ProviderDriver<AcpRegistrySettings, AcpRegistryD
             ),
           ),
           Effect.ensuring(Ref.set(devinUsageReading, false)),
+          // A refresh restarts the snapshot's enrichment, so it waits for a probe still discovering.
+          Effect.andThen(probing.withPermit(Effect.void)),
           Effect.andThen(Effect.suspend(() => refreshSnapshot)),
           Effect.forkDetach,
         );
@@ -1025,9 +1015,11 @@ export const AcpRegistryDriver: ProviderDriver<AcpRegistrySettings, AcpRegistryD
           );
         }
       });
-      const enriched = yield* enrichProvider((provider) =>
-        remember(provider).pipe(
-          Effect.andThen(publish({ provider, generation: cacheState.generation })),
+      const enriched = yield* probing.withPermit(
+        enrichProvider((provider) =>
+          remember(provider).pipe(
+            Effect.andThen(publish({ provider, generation: cacheState.generation })),
+          ),
         ),
       );
       yield* remember(enriched);
@@ -1121,7 +1113,6 @@ export const AcpRegistryDriver: ProviderDriver<AcpRegistrySettings, AcpRegistryD
                           configuration,
                           customModels: effectiveConfig.customModels,
                           now,
-                          assumeCurrentModelOptions: isDevinAgent(effectiveConfig),
                         }),
                       ),
                     ),
