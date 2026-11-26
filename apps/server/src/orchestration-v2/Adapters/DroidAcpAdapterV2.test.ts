@@ -198,6 +198,8 @@ const openDroidTurn = Effect.fn("DroidAcpAdapterV2Test.openDroidTurn")(function*
   readonly interactionMode: "default" | "plan";
   /** The Autonomy Level saved on the thread; Droid opens on Auto (High). */
   readonly autonomyLevel?: string;
+  /** The model the thread selects; Droid's session offers no model option unless a test sends one. */
+  readonly model?: string;
   readonly entries: ReadonlyArray<unknown>;
   readonly replayGate?: ReturnType<typeof makeProviderReplayGate>;
   readonly onContinuationOffered?: Effect.Effect<void>;
@@ -256,7 +258,7 @@ const openDroidTurn = Effect.fn("DroidAcpAdapterV2Test.openDroidTurn")(function*
   const threadId = ThreadId.make(`droid-${input.scenario}-thread`);
   const modelSelection = {
     instanceId,
-    model: "default",
+    model: input.model ?? "default",
     ...(input.autonomyLevel === undefined
       ? {}
       : { options: [{ id: "autonomy_level", value: input.autonomyLevel }] }),
@@ -724,6 +726,57 @@ describe("Droid over ACP", () => {
           "My read: keep the design.\n\nThe demo server shut down.\n\nNothing else is running.",
         ],
       );
+    }).pipe(Effect.provide(layerTest), Effect.scoped),
+  );
+  // Droid 1.20.0: out of Standard usage, it moves the session to another model and says so
+  // only in its own app; over ACP the change arrives as a `config_option_update`.
+  it.live("says in the thread when Droid moves the session to another model", () =>
+    Effect.gen(function* () {
+      const modelOption = (currentValue: string) => ({
+        sessionUpdate: "config_option_update",
+        configOptions: [
+          {
+            id: "model",
+            name: "Model",
+            category: "model",
+            type: "select",
+            currentValue,
+            options: [
+              { value: "gpt-6.2-astra", name: "GPT-6.2 Astra" },
+              { value: "kimi-k3.1-pro", name: "Kimi K3.1 Pro" },
+            ],
+          },
+        ],
+      });
+      const { runtime } = yield* openDroidTurn({
+        scenario: "own-model-change",
+        interactionMode: "default",
+        model: "gpt-6.2-astra",
+        entries: [
+          expectRequest("session/prompt"),
+          update({
+            sessionUpdate: "agent_message_chunk",
+            content: { type: "text", text: "Working on it." },
+          }),
+          update(modelOption("kimi-k3.1-pro")),
+          update(modelOption("kimi-k3.1-pro")),
+          update(modelOption("gpt-6.2-astra")),
+          respond("session/prompt", { stopReason: "end_turn" }),
+        ],
+      });
+      const events = yield* runtime.events.pipe(
+        Stream.takeUntil((event) => event.type === "turn.terminal"),
+        Stream.runCollect,
+      );
+      const notices = events.flatMap((event) =>
+        event.type === "turn_item.updated" && event.turnItem.type === "system_notice"
+          ? [event.turnItem.message]
+          : [],
+      );
+      assert.equal(notices.length, 2);
+      assert.include(notices[0], "Droid switched this session to Kimi K3.1 Pro");
+      assert.include(notices[0], "It was on GPT-6.2 Astra.");
+      assert.include(notices[1], "Droid switched this session back to GPT-6.2 Astra");
     }).pipe(Effect.provide(layerTest), Effect.scoped),
   );
   it.live("fails a rate-limited turn as a usage limit", () =>

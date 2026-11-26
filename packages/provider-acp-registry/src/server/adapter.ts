@@ -17,6 +17,7 @@ import {
   DROID_ORCHESTRATION_INSTRUCTIONS,
   droidApprovalOptions,
   droidLeftSpec,
+  droidOwnModelChangeNotice,
   droidPermissionDisposition,
   droidPromptFailure,
   droidSpecMarkdown,
@@ -382,6 +383,7 @@ export const makeAcpRegistryAdapterV2 = Effect.fn("makeAcpRegistryAdapterV2")(fu
           approvalOptions: droidApprovalOptions,
           leftSelectedOption: droidLeftSpec,
           joinsBackToBackAssistantMessages: true,
+          ownModelChangeNotice: droidOwnModelChangeNotice,
           extractSubagentUpdate: extractDroidSubagentUpdate,
           normalizeToolCall: normalizeDroidToolCall,
         }

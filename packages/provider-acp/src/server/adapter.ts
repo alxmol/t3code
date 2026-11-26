@@ -568,6 +568,16 @@ export interface AcpAdapterV2Flavor {
    * its fold, so such messages continue the one before them instead of hiding it.
    */
   readonly joinsBackToBackAssistantMessages?: boolean;
+  /**
+   * The agent may move a session to another model by itself (Droid, when the picked model's
+   * usage runs out, and back when it resets) and reports it only as a config update. The
+   * notice shown in the thread; `restored` when the model is the thread's selection again.
+   */
+  readonly ownModelChangeNotice?: (change: {
+    readonly from: string;
+    readonly to: string;
+    readonly restored: boolean;
+  }) => { readonly title: string; readonly description?: string };
   /** True when the agent left an option the thread selects; the next turn applies the selection again. */
   readonly leftSelectedOption?: (
     configOptions: ReadonlyArray<EffectAcpSchema.SessionConfigOption>,
@@ -2437,6 +2447,8 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           yield* resetPublishedCatalogKey;
         });
         const activeSelection = yield* Ref.make<ModelSelection | null>(null);
+        // The model the session last reported or was given, for `ownModelChangeNotice`.
+        const agentModel = yield* Ref.make<string | null>(null);
         const activeInteractionMode = yield* Ref.make<ProviderInteractionMode | null>(null);
         // Mode values configureSession left the agent in; a later difference is the agent's own change.
         const configuredModes = yield* Ref.make<ReadonlyMap<string, string>>(new Map());
@@ -6113,6 +6125,36 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
           const context = yield* Ref.get(activeTurn);
           const update = notification.update;
           if (
+            flavor.ownModelChangeNotice !== undefined &&
+            update.sessionUpdate === "config_option_update"
+          ) {
+            const option = findModelConfigOption(update.configOptions);
+            if (option !== undefined && typeof option.currentValue === "string") {
+              const selected = (yield* Ref.get(activeSelection))?.model;
+              const previous = (yield* Ref.getAndSet(agentModel, option.currentValue)) ?? selected;
+              // The thread's model is written before its prompt is sent; a change after that is the agent's.
+              if (
+                context !== null &&
+                context.promptSentAt !== null &&
+                !context.finalized &&
+                previous !== undefined &&
+                previous !== option.currentValue
+              ) {
+                const name = (model: string) =>
+                  flattenSelectChoices(option.options).find((choice) => choice.value === model)
+                    ?.name ?? model;
+                yield* emitNotice(
+                  context,
+                  flavor.ownModelChangeNotice({
+                    from: name(previous),
+                    to: name(option.currentValue),
+                    restored: option.currentValue === selected,
+                  }),
+                );
+              }
+            }
+          }
+          if (
             followsAgentWorkState &&
             flavor.extractSubagentSessionEvent !== undefined &&
             notification.sessionId !== (yield* Ref.get(activeSessionId)) &&
@@ -8484,6 +8526,7 @@ export const makeAcpAdapterV2 = Effect.fn("makeAcpAdapterV2")(function* (
                   })
                   .pipe(Effect.mapError(rejectedModel));
                 appliedModel = requestedModel;
+                yield* Ref.set(agentModel, requestedModel);
               }
             } else if (
               modelState != null &&

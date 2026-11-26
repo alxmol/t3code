@@ -195,6 +195,24 @@ export const droidApprovalOptions: NonNullable<AcpAdapterV2Flavor["approvalOptio
     const label = request.options.find((option) => option.kind === kind)?.name.trim();
     return label ? [{ decision, label }] : [];
   });
+/**
+ * Droid moves a session to its overage model when Standard usage is used up, and back when it
+ * resets. Its own app says so in a notice that never reaches ACP; the model option does.
+ */
+export const droidOwnModelChangeNotice: NonNullable<AcpAdapterV2Flavor["ownModelChangeNotice"]> = ({
+  from,
+  to,
+  restored,
+}) =>
+  restored
+    ? {
+        title: `Droid switched this session back to ${to}`,
+        description: `It had moved to ${from} by itself.`,
+      }
+    : {
+        title: `Droid switched this session to ${to}`,
+        description: `It was on ${from}. Droid changes the model by itself when your Standard usage is used up, and switches back when that resets. Its own app shows your limits under /limits.`,
+      };
 
 // An approved spec moves Droid to another autonomy level while the thread still selects Spec.
 // Only Spec returns: a level Droid raised for an "always allow" answer is the user's own choice.
