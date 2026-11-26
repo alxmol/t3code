@@ -56,6 +56,37 @@ describe("makeDevinToolRows", () => {
     ]);
   });
 
+  // Devin 3000.15 runs a command itself: the output so far as text, then `terminal_exit`.
+  it("gives a command the exit code Devin reports when it runs the command itself", () => {
+    const rows = makeDevinToolRows();
+    const update = (fields: Partial<AcpSchema.ToolCallUpdate>) =>
+      notify({ sessionUpdate: "tool_call_update", toolCallId: "call_be27", ...fields });
+    const preview = update({
+      status: "in_progress",
+      content: text("ls: /nonexistent-zz: No such file or directory"),
+      _meta: { ...exec, "cognition.ai/terminalPreview": true },
+    });
+    const exited = update({
+      status: "in_progress",
+      content: text("ls: /nonexistent-zz: No such file or directory"),
+      _meta: { ...exec, terminal_exit: { terminal_id: "f75660", exit_code: 1, signal: null } },
+    });
+    const completed = update({ status: "completed", _meta: exec });
+    rows.project(command);
+    expect(rows.project(preview)).toEqual([titled(preview, "Listing /nonexistent-zz")]);
+    expect(rows.project(exited)).toEqual([titled(exited, "Listing /nonexistent-zz")]);
+    expect(rows.project(completed)).toEqual([
+      {
+        ...completed,
+        update: {
+          ...completed.update,
+          title: "Listing /nonexistent-zz",
+          rawOutput: { output: "ls: /nonexistent-zz: No such file or directory", exitCode: 1 },
+        },
+      },
+    ]);
+  });
+
   it("leaves a command alone when its terminal has not exited", () => {
     const rows = makeDevinToolRows();
     rows.project(command);

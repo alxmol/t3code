@@ -43,6 +43,7 @@ export function makeDevinToolRows() {
   const titles = new Map<string, string>();
   const commands = new Map<string, string>();
   const terminals = new Map<string, TerminalRun>();
+  const ownRuns = new Map<string, { readonly output: string; readonly exitCode?: number }>();
   const heldSubagentCalls = new Map<string, HeldSubagentCall>();
   const shownAsSubagent = new Map<string, true>();
   const reportedAgents = new Map<string, true>();
@@ -125,9 +126,41 @@ export function makeDevinToolRows() {
       if (toolName !== "exec") return [titled];
       const command = record(update.rawInput)?.command;
       if (typeof command === "string") remember(commands, toolCallId, command);
+      // Devin 3000.15 runs the command itself: the output so far as text, then `terminal_exit`.
+      const exit = record(meta?.terminal_exit);
+      if (exit !== undefined || meta?.["cognition.ai/terminalPreview"] === true) {
+        const exitCode = typeof exit?.exit_code === "number" ? exit.exit_code : undefined;
+        const output =
+          update.content == null
+            ? (ownRuns.get(toolCallId)?.output ?? "")
+            : update.content
+                .flatMap((part) =>
+                  part.type === "content" && part.content.type === "text"
+                    ? [part.content.text]
+                    : [],
+                )
+                .join("");
+        remember(ownRuns, toolCallId, {
+          output,
+          ...(exitCode === undefined ? {} : { exitCode }),
+        });
+      }
       if (!ended) return [titled];
       const ran = commands.get(toolCallId);
       commands.delete(toolCallId);
+      const own = ownRuns.get(toolCallId);
+      ownRuns.delete(toolCallId);
+      if (own?.exitCode !== undefined && update.rawOutput == null) {
+        return [
+          {
+            ...notification,
+            update: {
+              ...titledUpdate,
+              rawOutput: { output: own.output.slice(-MAX_OUTPUT_CHARS), exitCode: own.exitCode },
+            },
+          },
+        ];
+      }
       if (ran === undefined || update.rawOutput != null) return [titled];
       const terminal = Array.from(terminals).find(([, run]) => run.command === ran && run.exited);
       if (terminal === undefined) return [titled];
