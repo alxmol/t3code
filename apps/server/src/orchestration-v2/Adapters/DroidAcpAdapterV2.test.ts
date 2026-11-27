@@ -768,15 +768,20 @@ describe("Droid over ACP", () => {
         Stream.takeUntil((event) => event.type === "turn.terminal"),
         Stream.runCollect,
       );
-      const notices = events.flatMap((event) =>
+      const noticeItems = events.flatMap((event) =>
         event.type === "turn_item.updated" && event.turnItem.type === "system_notice"
-          ? [event.turnItem.message]
+          ? [event.turnItem]
           : [],
       );
+      const notices = noticeItems.map((item) => item.message);
       assert.equal(notices.length, 2);
       assert.include(notices[0], "Droid switched this session to Kimi K3.1 Pro");
       assert.include(notices[0], "It was on GPT-6.2 Astra.");
       assert.include(notices[1], "Droid switched this session back to GPT-6.2 Astra");
+      assert.deepEqual(
+        noticeItems.map((item) => item.level),
+        ["warning", "info"],
+      );
     }).pipe(Effect.provide(layerTest), Effect.scoped),
   );
   it.live("fails a rate-limited turn as a usage limit", () =>

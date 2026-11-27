@@ -206,10 +206,12 @@ export const droidOwnModelChangeNotice: NonNullable<AcpAdapterV2Flavor["ownModel
 }) =>
   restored
     ? {
+        severity: "info",
         title: `Droid switched this session back to ${to}`,
         description: `It had moved to ${from} by itself.`,
       }
     : {
+        severity: "warning",
         title: `Droid switched this session to ${to}`,
         description: `It was on ${from}. Droid changes the model by itself when your Standard usage is used up, and switches back when that resets. Its own app shows your limits under /limits.`,
       };
